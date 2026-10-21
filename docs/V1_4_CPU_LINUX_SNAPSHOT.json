@@ -1,0 +1,53 @@
+{
+  "note": "Local classical-separator-only synthetic CPU snapshot; not actual RNNoise inference or FL Studio",
+  "compiler": "g++ (Debian 14.2.0-19) 14.2.0",
+  "os": "Linux-6.18.55-x86_64-with-glibc2.41",
+  "processor": "",
+  "profiles": [
+    {
+      "engine": "classical_only",
+      "sample_rate": 48000,
+      "block_size": 64,
+      "audio_seconds": 10,
+      "callback_mean_us": 28.024,
+      "callback_p95_us": 103.635,
+      "callback_p99_us": 166.048,
+      "callback_max_us": 485.759,
+      "block_deadline_us": 1333.333,
+      "mean_deadline_pct": 2.102,
+      "deadline_misses": 0,
+      "blocks": 7500,
+      "checksum": -0.407
+    },
+    {
+      "engine": "classical_only",
+      "sample_rate": 48000,
+      "block_size": 256,
+      "audio_seconds": 10,
+      "callback_mean_us": 121.36,
+      "callback_p95_us": 183.515,
+      "callback_p99_us": 334.231,
+      "callback_max_us": 2333.414,
+      "block_deadline_us": 5333.333,
+      "mean_deadline_pct": 2.275,
+      "deadline_misses": 0,
+      "blocks": 1875,
+      "checksum": -0.407
+    },
+    {
+      "engine": "classical_only",
+      "sample_rate": 96000,
+      "block_size": 256,
+      "audio_seconds": 10,
+      "callback_mean_us": 114.321,
+      "callback_p95_us": 166.53,
+      "callback_p99_us": 261.242,
+      "callback_max_us": 4720.418,
+      "block_deadline_us": 2666.667,
+      "mean_deadline_pct": 4.287,
+      "deadline_misses": 1,
+      "blocks": 3750,
+      "checksum": -1.307
+    }
+  ]
+}
