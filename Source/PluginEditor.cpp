@@ -2,9 +2,9 @@
 
 SkellSeparatorAudioProcessorEditor::SkellSeparatorAudioProcessorEditor(SkellSeparatorAudioProcessor& p)
     : AudioProcessorEditor(&p), processor(p), header(p),
-      ambience(p, 0, "Ambience", "ambience", -17.0f),
+      ambience(p, 0, "Ambience", "ambience", 0.0f),
       voice(p, 1, "Voice", "voice", 0.0f),
-      reverb(p, 2, "Voice Reverb", "reverb", -17.0f)
+      reverb(p, 2, "Voice Reverb", "reverb", 0.0f)
 {
     setLookAndFeel(&style);
     addAndMakeVisible(header);
@@ -49,6 +49,9 @@ void SkellSeparatorAudioProcessorEditor::paint(juce::Graphics& g)
     }
     g.setColour(juce::Colours::white.withAlpha(0.045f));
     g.drawLine(0.0f, 0.5f, 1047.0f, 0.5f, 1.0f);
+    // Fine separator under the header, deliberately soft at 75% size.
+    g.setColour(juce::Colours::white.withAlpha(0.050f));
+    g.drawLine(48.0f, 105.5f, 1001.0f, 105.5f, 1.0f);
     g.setColour(juce::Colour(0xff0b0b0c));
     g.drawRect(0.0f, 0.0f, 1047.0f, 597.0f, 2.0f);
 }
@@ -114,7 +117,7 @@ void SkellSeparatorAudioProcessorEditor::applyScale(int percent)
 void SkellSeparatorAudioProcessorEditor::showMenu()
 {
     juce::PopupMenu popup;
-    popup.addSectionHeader("SKELL SEPARATOR  /  1.4");
+    popup.addSectionHeader("SKELL SEPARATOR  /  1.8");
     popup.addItem(1, "Reset All");
     popup.addItem(2, "Copy Settings to Clipboard");
     popup.addItem(3, "Input Mono Sum", true,
@@ -178,13 +181,14 @@ void SkellSeparatorAudioProcessorEditor::showMenu()
                        "Worker inference mean: ") + juce::String(p.getNeuralWorkerMeanUs(), 1) + " us/frame\n"
                        "Worker inference max: " + juce::String(static_cast<juce::int64>(p.getNeuralWorkerMaxUs())) + " us/frame\n"
                        "Missed frames: " + juce::String(static_cast<juce::int64>(p.getNeuralMissedFrames())) + "\n"
-                       "Dropped queued frames: " + juce::String(static_cast<juce::int64>(p.getNeuralQueueDropped())))
+                       "Dropped queued frames: " + juce::String(static_cast<juce::int64>(p.getNeuralQueueDropped())) + "\n"
+                       "Rejected corrupt frames: " + juce::String(static_cast<juce::int64>(p.getNeuralRejectedFrames())))
                     : "Classical STFT fallback is active.\n"
                       "No neural model is running; either RNNoise is not linked, or the sample rate is not 48 kHz.\n"
                       "The three stems are estimated, not true clean source separation.\n"
                       "Original build latency: 1024 samples. RNNoise-enabled build: 2880 samples (all rates).";
                 juce::AlertWindow::showMessageBoxAsync(juce::MessageBoxIconType::InfoIcon,
-                    "Skell Separator — Processing Engine", "Skell Separator 1.4\n\n" + details,
+                    "Skell Separator — Processing Engine", "Skell Separator 1.8\n\n" + details,
                     "OK", safe.getComponent());
             }
         });

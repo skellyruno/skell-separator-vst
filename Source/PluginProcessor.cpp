@@ -30,7 +30,7 @@ juce::AudioProcessorValueTreeState::ParameterLayout SkellSeparatorAudioProcessor
         juce::String title = id == "reverb" ? "Voice Reverb" : id.substring(0, 1).toUpperCase() + id.substring(1);
         layout.add(std::make_unique<juce::AudioParameterFloat>(
             juce::ParameterID { id + "Gain", 1 }, title + " Gain",
-            juce::NormalisableRange<float>(-40.0f, 40.0f, 0.1f), id == "voice" ? 0.0f : -17.0f));
+            juce::NormalisableRange<float>(-40.0f, 40.0f, 0.1f), 0.0f));
         layout.add(std::make_unique<juce::AudioParameterBool>(
             juce::ParameterID { id + "Solo", 1 }, title + " Solo", false));
         layout.add(std::make_unique<juce::AudioParameterBool>(
@@ -55,7 +55,7 @@ void SkellSeparatorAudioProcessor::prepareToPlay(double sampleRate, int)
     separator.prepare(sampleRate);
     alignment.reset();
     neuralSampleIndex = 0;
-    neuralMix = 0.0f;
+    neuralBlend.reset();
     // Model loading and thread startup happen at prepareToPlay, NOT on audio.
     // No model at non-48 kHz: RNNoise has a strict 480/48 kHz contract.
     neural.start(std::abs(sampleRate - 48000.0) < 0.5
@@ -153,20 +153,10 @@ void SkellSeparatorAudioProcessor::processAudio(juce::AudioBuffer<float>& b, boo
             std::array<float, 2> neuralVoice {};
             const bool available = neural.readSample(
                 neuralSampleIndex - LatencyAlignedStems::skellLatency(), neuralVoice);
-            // Crossfade when the worker misses its deadline; never block,
-            // delay a sample, or shift any signal in the output timeline.
-            const float target = available ? 1.0f : 0.0f;
-            const float change = 1.0f / 240.0f; // 5 ms at 48 kHz
-            neuralMix += juce::jlimit(-change, change, target - neuralMix);
-            for (int ch = 0; ch < 2; ++ch)
-            {
-                const auto c = static_cast<size_t>(ch);
-                const float original = stemSamples[0][c] + stemSamples[1][c] + stemSamples[2][c];
-                const float combinedVoice = (1.0f - neuralMix) * stemSamples[1][c]
-                                          + neuralMix * neuralVoice[c];
-                stemSamples[1][c] = combinedVoice;
-                stemSamples[0][c] = original - combinedVoice - stemSamples[2][c];
-            }
+            // Missing model data is NOT a zero-valued voice frame. Fade the
+            // last applied neural correction toward classical stems without
+            // introducing a voice dropout or a transient ambience spike.
+            neuralBlend.apply(stemSamples, available, neuralVoice);
         }
         ++neuralSampleIndex;
         const auto out = mixer.mix(stemSamples, rawDelayed);
@@ -194,7 +184,7 @@ void SkellSeparatorAudioProcessor::resetAllParameters()
 void SkellSeparatorAudioProcessor::usePreset(int index)
 {
     constexpr float presets[4][3] {
-        { -17.0f, 0.0f, -17.0f },
+        { 0.0f, 0.0f, 0.0f },
         { -40.0f, 0.0f, -40.0f },
         { 0.0f, -40.0f, -40.0f },
         { -20.0f, 0.0f, -5.0f }
@@ -232,7 +222,7 @@ void SkellSeparatorAudioProcessor::setStateInformation(const void* data, int siz
         if (xml->hasTagName(apvts.state.getType()))
         {
             const auto tree = juce::ValueTree::fromXml(*xml);
-            setUiScale(static_cast<int>(tree.getProperty("scale", 100)));
+            setUiScale(static_cast<int>(tree.getProperty("scale", 75)));
             presetIndex.store(juce::jlimit(0, 3, static_cast<int>(tree.getProperty("preset", 0))));
             circularKnobs.store(static_cast<bool>(tree.getProperty("circularKnobs", false)));
             apvts.replaceState(tree);

@@ -7,6 +7,7 @@
 #include "dsp/SpectralAnalyzer.h"
 #include "dsp/StreamingNeural.h"
 #include "dsp/LatencyAlignedStems.h"
+#include "dsp/NeuralVoiceBlend.h"
 
 class SkellSeparatorAudioProcessor final : public juce::AudioProcessor
 {
@@ -43,6 +44,7 @@ public:
     bool isNeuralRunning() const noexcept { return neural.active(); }
     std::uint64_t getNeuralMissedFrames() const noexcept { return neural.missedDeadlines(); }
     std::uint64_t getNeuralQueueDropped() const noexcept { return neural.droppedFrames(); }
+    std::uint64_t getNeuralRejectedFrames() const noexcept { return neural.rejectedFrames(); }
     double getNeuralWorkerMeanUs() const noexcept { return neural.meanWorkerFrameUs(); }
     std::uint64_t getNeuralWorkerMaxUs() const noexcept { return neural.maxWorkerFrameUs(); }
     void usePreset(int index);
@@ -58,14 +60,14 @@ private:
     LatencyAlignedStems alignment;
     skell::StreamingNeural neural;
     std::int64_t neuralSampleIndex = 0;
-    float neuralMix = 0.0f;
+    skell::NeuralVoiceBlend neuralBlend;
     StemMixer mixer;
     juce::SmoothedValue<float, juce::ValueSmoothingTypes::Linear> monoBlend;
     std::array<std::atomic<float>*, 3> gainParams {}, soloParams {}, muteParams {};
     std::atomic<float>* modeParam = nullptr;
     std::atomic<float>* bypassParam = nullptr;
     std::atomic<float>* qualityParam = nullptr;
-    std::atomic<int> uiScale { 100 }, presetIndex { 0 };
+    std::atomic<int> uiScale { 75 }, presetIndex { 0 };
     std::atomic<bool> circularKnobs { false };
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(SkellSeparatorAudioProcessor)
 };

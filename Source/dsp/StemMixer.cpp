@@ -6,7 +6,7 @@ void StemMixer::prepare(double sampleRate) noexcept
     {
         gains[static_cast<size_t>(s)].reset(sampleRate, 0.020);
         gates[static_cast<size_t>(s)].reset(sampleRate, 0.020);
-        gains[static_cast<size_t>(s)].setCurrentAndTargetValue(s == 1 ? 1.0f : juce::Decibels::decibelsToGain(-17.0f));
+        gains[static_cast<size_t>(s)].setCurrentAndTargetValue(1.0f);
         gates[static_cast<size_t>(s)].setCurrentAndTargetValue(1.0f);
     }
     bypassCrossfade.reset(sampleRate, 0.010);

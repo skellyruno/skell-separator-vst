@@ -1,6 +1,8 @@
 #include "StreamingNeural.h"
 #include <chrono>
 #include <cmath>
+#include <algorithm>
+#include <limits>
 #include <utility>
 
 #if defined(SKELL_WITH_RNNOISE) && SKELL_WITH_RNNOISE && !defined(SKELL_NEURAL_TEST_STUB)
@@ -26,13 +28,18 @@ public:
             // RNNoise expects float samples on the int16 PCM scale, NOT [-1, 1].
             for (int i = 0; i < neuralFrameSize; ++i)
                 scaled[static_cast<std::size_t>(i)] =
-                    in.audio[static_cast<std::size_t>(channel)][static_cast<std::size_t>(i)] * 32768.0f;
+                    std::clamp(in.audio[static_cast<std::size_t>(channel)][static_cast<std::size_t>(i)],
+                               -1.0f, 1.0f) * 32768.0f;
             rnnoise_process_frame(states[static_cast<std::size_t>(channel)],
                                   result.data(), scaled.data());
             for (int i = 0; i < neuralFrameSize; ++i) {
                 const float value = result[static_cast<std::size_t>(i)] * (1.0f / 32768.0f);
-                out.audio[static_cast<std::size_t>(channel)][static_cast<std::size_t>(i)] =
-                    std::isfinite(value) ? value : 0.0f;
+                // Do not disguise a corrupt neural frame as zero-valued voice.
+                // The worker rejects the complete frame so the 5 ms classical
+                // fallback transition can handle it without a dropout.
+                if (!std::isfinite(value) || std::abs(value) > 8.0f)
+                    out.valid = false;
+                out.audio[static_cast<std::size_t>(channel)][static_cast<std::size_t>(i)] = value;
             }
         }
     }
@@ -60,6 +67,7 @@ bool StreamingNeural::start(std::unique_ptr<NeuralFrameBackend> newBackend) {
     dropped.store(0, std::memory_order_relaxed);
     missed.store(0, std::memory_order_relaxed);
     completed.store(0, std::memory_order_relaxed);
+    rejected.store(0, std::memory_order_relaxed);
     workerFrames.store(0, std::memory_order_relaxed);
     workerTimeUs.store(0, std::memory_order_relaxed);
     workerMaxUs.store(0, std::memory_order_relaxed);
@@ -90,8 +98,21 @@ void StreamingNeural::threadMain() noexcept {
             backend->reset();
             previousStart = -1;
         }
+        // Fill with a non-finite sentinel so even a backend that writes only
+        // PART of its output is rejected (rather than silently introducing
+        // zero-filled holes in the Voice stem). This runs on the worker only.
+        result.startSample = -1;
+        result.valid = true;
+        for (auto& channel : result.audio)
+            channel.fill(std::numeric_limits<float>::quiet_NaN());
         const auto started = std::chrono::steady_clock::now();
         backend->process(frame, result);
+        for (const auto& channel : result.audio)
+            for (const float value : channel)
+                if (!std::isfinite(value) || std::abs(value) > 8.0f)
+                    result.valid = false;
+        if (!result.valid)
+            rejected.fetch_add(1, std::memory_order_relaxed);
         const auto durationUs = static_cast<std::uint64_t>(
             std::chrono::duration_cast<std::chrono::microseconds>(
                 std::chrono::steady_clock::now() - started).count());
@@ -105,7 +126,15 @@ void StreamingNeural::threadMain() noexcept {
             if (!outgoing.push(result)) dropped.fetch_add(1, std::memory_order_relaxed);
             else completed.fetch_add(1, std::memory_order_relaxed);
         }
-        previousStart = frame.startSample;
+        // A corrupt recurrent model state can contaminate ALL future frames.
+        // Reset on the worker, discard the frame needed to re-prime its
+        // one-frame look-behind, and preserve the original sample timestamps.
+        if (!result.valid) {
+            backend->reset();
+            previousStart = -1;
+        } else {
+            previousStart = frame.startSample;
+        }
     }
 }
 
@@ -133,7 +162,7 @@ bool StreamingNeural::readSample(std::int64_t originalSample,
             ready[static_cast<std::size_t>((newFrame.startSample / neuralFrameSize) % ready.size())] = newFrame;
         selectedFrame = frameStart;
         const auto& cached = ready[static_cast<std::size_t>((frameStart / neuralFrameSize) % ready.size())];
-        selectedValid = cached.startSample == frameStart;
+        selectedValid = cached.startSample == frameStart && cached.valid;
         if (!selectedValid) missed.fetch_add(1, std::memory_order_relaxed);
     }
     if (!selectedValid) return false;

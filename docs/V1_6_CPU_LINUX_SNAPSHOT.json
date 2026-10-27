@@ -1,0 +1,50 @@
+{
+  "description": "Classical STFT engine only; Linux test shim, no Windows host or neural model inference",
+  "profiles": [
+    {
+      "engine": "classical_only",
+      "sample_rate": 48000,
+      "block_size": 64,
+      "audio_seconds": 4,
+      "callback_mean_us": 32.046,
+      "callback_p95_us": 136.395,
+      "callback_p99_us": 219.34,
+      "callback_max_us": 535.233,
+      "block_deadline_us": 1333.333,
+      "mean_deadline_pct": 2.403,
+      "deadline_misses": 0,
+      "blocks": 3000,
+      "checksum": -1.441
+    },
+    {
+      "engine": "classical_only",
+      "sample_rate": 48000,
+      "block_size": 256,
+      "audio_seconds": 4,
+      "callback_mean_us": 137.768,
+      "callback_p95_us": 235.564,
+      "callback_p99_us": 722.886,
+      "callback_max_us": 2051.081,
+      "block_deadline_us": 5333.333,
+      "mean_deadline_pct": 2.583,
+      "deadline_misses": 0,
+      "blocks": 750,
+      "checksum": -1.441
+    },
+    {
+      "engine": "classical_only",
+      "sample_rate": 96000,
+      "block_size": 256,
+      "audio_seconds": 4,
+      "callback_mean_us": 127.981,
+      "callback_p95_us": 212.89,
+      "callback_p99_us": 348.854,
+      "callback_max_us": 3152.144,
+      "block_deadline_us": 2666.667,
+      "mean_deadline_pct": 4.799,
+      "deadline_misses": 1,
+      "blocks": 1500,
+      "checksum": -1.464
+    }
+  ]
+}

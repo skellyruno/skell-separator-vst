@@ -2,6 +2,8 @@
 
 HeaderBar::HeaderBar(SkellSeparatorAudioProcessor& p) : processor(p)
 {
+    mode.setTooltip("Switch between mono sum and stereo processing");
+    bypass.setTooltip("Use the unprocessed, latency-aligned input");
     addAndMakeVisible(mode);
     addAndMakeVisible(bypass);
     addAndMakeVisible(previous);

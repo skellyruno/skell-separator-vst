@@ -1,0 +1,33 @@
+{
+  "description": "One six-second local Linux classical-only synthetic-stereo spot check, approximate and non-deterministic; includes synthetic sine generation inside timed sections, no model inference.",
+  "baseline_v1_4": {
+    "engine": "classical_only",
+    "sample_rate": 48000,
+    "block_size": 256,
+    "audio_seconds": 6,
+    "callback_mean_us": 124.669,
+    "callback_p95_us": 199.019,
+    "callback_p99_us": 349.805,
+    "callback_max_us": 3064.072,
+    "block_deadline_us": 5333.333,
+    "mean_deadline_pct": 2.338,
+    "deadline_misses": 0,
+    "blocks": 1125,
+    "checksum": -0.43
+  },
+  "updated_v1_5": {
+    "engine": "classical_only",
+    "sample_rate": 48000,
+    "block_size": 256,
+    "audio_seconds": 6,
+    "callback_mean_us": 123.004,
+    "callback_p95_us": 188.863,
+    "callback_p99_us": 308.883,
+    "callback_max_us": 847.402,
+    "block_deadline_us": 5333.333,
+    "mean_deadline_pct": 2.306,
+    "deadline_misses": 0,
+    "blocks": 1125,
+    "checksum": -1.417
+  }
+}

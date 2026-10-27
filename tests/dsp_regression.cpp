@@ -35,6 +35,58 @@ void maskTests() {
     for(int k=0;k<MaskEstimator::bins;++k) assert(dry[k]==0.0f&&wet[k]==0.0f);
 }
 
+// Targeted low-register harmonic regression: preserve the 93.75 Hz voiced
+// fundamental while avoiding mask bleed into its quiet adjacent bin. These
+// are synthetic FFT magnitudes, NOT evidence of real-vocal source isolation.
+void lowRegisterMaskTests()
+{
+    MaskEstimator estimator;
+    estimator.prepare(48000.0);
+    MaskEstimator::Spectrum input {}, side {}, voice {}, reverb {};
+    input.fill(0.08f);
+    side.fill(0.01f);
+    for (int frame = 0; frame < 100; ++frame)
+        estimator.process(input, side, 1, voice, reverb);
+    // 1024-point / 48kHz FFT bin 2 = 93.75 Hz.
+    input[2] = 14.0f;
+    for (int frame = 0; frame < 75; ++frame)
+        estimator.process(input, side, 1, voice, reverb);
+    assert(voice[2] > 0.38f);
+    assert(voice[3] < 0.12f);
+    assert(voice[2] > 3.0f * voice[3]);
+    assert(voice[2] + reverb[2] <= 0.97001f);
+}
+
+// Decision-directed spectral prior must remain causal, stable and responsive
+// across sample rates. This is a mask-level probe, not a music-vocal benchmark.
+void adaptivePriorTests(int sampleRate)
+{
+    MaskEstimator m;
+    m.prepare(sampleRate);
+    MaskEstimator::Spectrum input {}, side {}, dry {}, wet {};
+    input.fill(0.18f);
+    side.fill(0.025f);
+    const int baselineFrames = std::max(30, sampleRate / 256);
+    for (int n = 0; n < baselineFrames; ++n)
+        m.process(input, side, 1, dry, wet);
+    const float quietMask = dry[18];
+    input[18] = 12.0f;
+    input[37] = 5.0f;
+    const int onsetFrames = std::max(16, sampleRate / 1200);
+    for (int n = 0; n < onsetFrames; ++n)
+        m.process(input, side, 1, dry, wet);
+    const float voiceMask = dry[18];
+    assert(std::isfinite(quietMask) && std::isfinite(voiceMask));
+    assert(voiceMask > 0.25f);
+    assert(voiceMask > quietMask + 0.18f);
+    assert(dry[18] + wet[18] <= 0.97001f);
+    // Clearing state must clear the new prior, including after transport stop.
+    m.reset();
+    input.fill(0.0f); side.fill(0.0f);
+    m.process(input, side, 1, dry, wet);
+    assert(dry[18] == 0.0f && wet[18] == 0.0f);
+}
+
 void analyzerResetTests()
 {
     SpectralAnalyzer a;
@@ -179,6 +231,48 @@ void stereoPolarityTests()
     assert(panned > centred * 0.20);
 }
 
+// An invalid audio sample must never poison FFT overlap-add, noise history,
+// complementary reconstruction, or subsequent healthy samples. Also verify
+// that out-of-range host audio is bounded before the long-lived DSP state.
+void nonfiniteTransportRecoveryTests()
+{
+    SpectralAnalyzer analyzer;
+    Separator sep(analyzer);
+    sep.prepare(48000.0);
+    constexpr int n = 10000;
+    std::array<float, n> expectedLeft {}, expectedRight {};
+    const auto nan = std::numeric_limits<float>::quiet_NaN();
+    const auto inf = std::numeric_limits<float>::infinity();
+    for (int i=0; i<n; ++i)
+    {
+        float left = 0.13f * std::sin(0.039f * i);
+        float right = 0.09f * std::cos(0.057f * i);
+        if (i==1100) left = nan;
+        if (i==2400) right = inf;
+        if (i==4800) { left = 13.0f; right = -17.0f; }
+        const float safeLeft = std::isfinite(left) ? std::clamp(left,-8.0f,8.0f) : 0.0f;
+        const float safeRight = std::isfinite(right) ? std::clamp(right,-8.0f,8.0f) : 0.0f;
+        expectedLeft[static_cast<size_t>(i)] = safeLeft;
+        expectedRight[static_cast<size_t>(i)] = safeRight;
+        Separator::Stems stems {};
+        std::array<float,2> bypass {};
+        sep.processSample(left,right,i==2400 ? inf : 0.0f,1,stems,bypass);
+        for (int ch=0;ch<2;++ch)
+        {
+            const float sum=stems[0][ch]+stems[1][ch]+stems[2][ch];
+            assert(std::isfinite(sum));
+            assert(std::isfinite(stems[0][ch]));
+            assert(std::isfinite(stems[1][ch]));
+            assert(std::isfinite(stems[2][ch]));
+            const auto delayed = i >= Separator::latency ? static_cast<size_t>(i-Separator::latency) : 0;
+            const float expected = i >= Separator::latency
+                ? (ch==0 ? expectedLeft[delayed] : expectedRight[delayed]) : 0.0f;
+            assert(std::abs(sum-expected) < 2.0e-5f);
+            assert(std::abs(bypass[static_cast<size_t>(ch)]-expected)<1.0e-6f);
+        }
+    }
+}
+
 void transportAndModeTests() {
     SpectralAnalyzer spectrum;
     Separator separator(spectrum);
@@ -255,11 +349,16 @@ void mixerTests() {
 
 int main() {
     maskTests();
+    lowRegisterMaskTests();
     analyzerResetTests();
     mixerTests();
     transportAndModeTests();
+    nonfiniteTransportRecoveryTests();
     stereoPolarityTests();
-    for (int sr : {44100, 48000, 96000, 192000}) voiceTailAndSilenceTests(sr);
+    for (int sr : {44100, 48000, 96000, 192000}) {
+        voiceTailAndSilenceTests(sr);
+        adaptivePriorTests(sr);
+    }
     for(int sr:{44100,48000,96000}) for(int q=0;q<3;++q) for(bool mono:{false,true}) blockInvariantTests(sr,mono,q);
     std::cout<<"DSP regression tests passed\n";
 }

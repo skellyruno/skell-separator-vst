@@ -14,6 +14,9 @@ StemColumn::StemColumn(SkellSeparatorAudioProcessor& p, int index,
         p.apvts, stemId + "Solo", solo);
     muteAttachment = std::make_unique<juce::AudioProcessorValueTreeState::ButtonAttachment>(
         p.apvts, stemId + "Mute", mute);
+    gain.setTooltip("Drag to adjust " + heading + " level; double-click to reset to 0 dB; right-click to type.");
+    solo.setTooltip("Isolate " + heading + " (solo)");
+    mute.setTooltip("Silence " + heading + " (mute)");
 }
 
 void StemColumn::paint(juce::Graphics& g)

@@ -7,7 +7,7 @@ TickKnob::TickKnob(float defaultValue) : defaultDb(defaultValue)
     setSliderStyle(juce::Slider::RotaryVerticalDrag);
     setRotaryParameters(-juce::MathConstants<float>::pi * 0.75f,
                         juce::MathConstants<float>::pi * 0.75f, true);
-    setTextBoxStyle(juce::Slider::TextBoxBelow, false, 160, 30);
+    setTextBoxStyle(juce::Slider::TextBoxBelow, false, 146, 29);
     setTextValueSuffix(" dB");
     textFromValueFunction = [](double v) {
         return v <= -39.95 ? juce::String("-inf dB") : juce::String(v, 1) + " dB";
@@ -43,9 +43,9 @@ void TickKnob::renderFace()
         const float groove = 0.5f + 0.5f * std::cos(a1 * 10.0f + 0.15f);
         const float bright = 0.17f * beam + 0.055f * groove;
         const auto colour = juce::Colour::fromRGB(
-            static_cast<juce::uint8>(24 + bright * 45),
-            static_cast<juce::uint8>(28 + bright * 55),
-            static_cast<juce::uint8>(46 + bright * 75));
+            static_cast<juce::uint8>(29 + bright * 48),
+            static_cast<juce::uint8>(34 + bright * 58),
+            static_cast<juce::uint8>(55 + bright * 75));
         juce::Path wedge;
         wedge.startNewSubPath(c);
         wedge.lineTo(c.x + radius * std::sin(a1), c.y - radius * std::cos(a1));
@@ -89,8 +89,11 @@ void TickKnob::paint(juce::Graphics& g)
     g.setColour(juce::Colour(0xff12131b));
     g.fillEllipse(centre.x - 105, centre.y - 105, 210, 210);
     g.drawImage(face, juce::Rectangle<float>(centre.x - 104, centre.y - 104, 208, 208));
-    g.setColour(juce::Colour(0xff3b405a).withAlpha(0.56f));
+    // Brushed navy rim with a small upper highlight: readable at 75% scale.
+    g.setColour(juce::Colour(0xff515774).withAlpha(0.60f));
     g.drawEllipse(centre.x - 101, centre.y - 101, 202, 202, 1.1f);
+    g.setColour(juce::Colour(0xff687095).withAlpha(0.15f));
+    g.strokePath(Theme::arc(centre, 100.0f, -0.9f, 0.9f), juce::PathStrokeType(1.2f));
     if (active && !muted && signal > 0.006f)
     {
         const auto glowPath = Theme::arc(centre, 103.0f, -1.16f, 1.12f);

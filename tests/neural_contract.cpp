@@ -3,6 +3,7 @@
 #include <cstdint>
 #include <iostream>
 #include <memory>
+#include <limits>
 #include <thread>
 #include <chrono>
 #include "dsp/StreamingNeural.h"
@@ -18,6 +19,86 @@ struct FrameDelayTestModel : skell::NeuralFrameBackend {
         previous = input;
     }
 };
+
+// This model deliberately corrupts TWO different delayed output frames.
+// A single bad sample must invalidate the entire frame on the worker thread,
+// never be converted to a sudden zero in the audio callback.
+struct CorruptTestModel : skell::NeuralFrameBackend {
+    skell::NeuralFrame previous {};
+    bool valid() const noexcept override { return true; }
+    void reset() noexcept override { previous = {}; }
+    void process(const skell::NeuralFrame& input,
+                 skell::NeuralFrame& output) noexcept override {
+        output = previous;
+        if (output.startSample == 4 * skell::neuralFrameSize)
+            output.audio[0][17] = std::numeric_limits<float>::quiet_NaN();
+        if (output.startSample == 7 * skell::neuralFrameSize)
+            output.audio[1][29] = 10.0f;
+        previous = input;
+    }
+};
+
+static void testWholeFrameCorruptionPolicy()
+{
+    skell::StreamingNeural stream;
+    assert(stream.start(std::make_unique<CorruptTestModel>()));
+    int validBefore = 0, validAfter = 0;
+    int invalidDelivered = 0;
+    constexpr int totalSamples = 24 * skell::neuralFrameSize;
+    for (int i = 0; i < totalSamples; ++i) {
+        stream.submitSample(0.25f, -0.125f, i);
+        std::array<float, 2> out { -777.0f, -777.0f };
+        const auto t = i - skell::neuralContractLatency;
+        const bool ready = stream.readSample(t, out);
+        if (t >= 0) {
+            const auto index = t / skell::neuralFrameSize;
+            if (index == 4 || index == 7) {
+                if (ready) ++invalidDelivered;
+                assert(!ready);
+                // Failed reads must not overwrite the caller's output.
+                assert(out[0] == -777.0f && out[1] == -777.0f);
+            } else if (ready) {
+                assert(std::isfinite(out[0]) && std::isfinite(out[1]));
+                if (index < 4) ++validBefore;
+                if (index > 7) ++validAfter;
+            }
+        }
+        // As in the positive timing contract, provide scheduling headroom.
+        if (i % 96 == 0)
+            std::this_thread::sleep_for(std::chrono::milliseconds(2));
+    }
+    assert(invalidDelivered == 0);
+    assert(stream.rejectedFrames() == 2);
+    assert(validBefore > 100 && validAfter > 100);
+    std::cout << "whole-frame NaN/range rejection with recovery: PASS\n";
+    stream.stop();
+}
+
+// A backend that forgets to write part of its frame must never silently
+// inject zero voice. Worker NaN sentinels detect incomplete model output.
+struct IncompleteOutputTestModel : skell::NeuralFrameBackend {
+    bool valid() const noexcept override { return true; }
+    void reset() noexcept override {}
+    void process(const skell::NeuralFrame&, skell::NeuralFrame& output) noexcept override {
+        output.audio[0][0] = 0.2f;
+        output.audio[1][0] = -0.2f;
+    }
+};
+static void testIncompleteOutputRejected()
+{
+    skell::StreamingNeural stream;
+    assert(stream.start(std::make_unique<IncompleteOutputTestModel>()));
+    for (int i = 0; i < 18 * skell::neuralFrameSize; ++i) {
+        stream.submitSample(0.2f, -0.2f, i);
+        std::array<float, 2> out {};
+        assert(!stream.readSample(i - skell::neuralContractLatency, out));
+        if (i % 96 == 0)
+            std::this_thread::sleep_for(std::chrono::milliseconds(2));
+    }
+    assert(stream.rejectedFrames() >= 3);
+    stream.stop();
+    std::cout << "incomplete neural output rejected: PASS\n";
+}
 
 static void testAlignedClassicalPath()
 {
@@ -95,6 +176,8 @@ static void testAsynchronousNeural()
 int main() {
     testAlignedClassicalPath();
     testAsynchronousNeural();
+    testWholeFrameCorruptionPolicy();
+    testIncompleteOutputRejected();
 #if defined(SKELL_TEST_RNNOISE_API)
     auto model = skell::createRNNoiseBackend();
     assert(model && model->valid());

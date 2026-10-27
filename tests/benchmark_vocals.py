@@ -93,6 +93,13 @@ def benchmark(case, variant, latency):
     combined_input = sum(refs.values())
     combined_output = sum(estimates.values())
     diff = combined_input - combined_output
+    # A separation score alone cannot tell whether processing improved over
+    # leaving the entire mixture untouched. Publish an explicit unprocessed
+    # baseline, computed on precisely the same aligned reference samples.
+    voice_baseline_si = si_sdr(refs["voice"], combined_input)
+    voice_baseline_sdr = sdr(refs["voice"], combined_input)
+    voice_si = si_sdr(refs["voice"], estimates["voice"])
+    voice_sdr = sdr(refs["voice"], estimates["voice"])
     result = {
         "case": root.name, "variant": variant, "sample_rate": sample_rate,
         "channels": shape[1], "aligned_seconds": round(min_length / sample_rate, 4),
@@ -103,6 +110,14 @@ def benchmark(case, variant, latency):
         "unity_reconstruction_rms": float(np.sqrt(np.mean(diff * diff))),
         "voice_interference_rms": float(np.sqrt(np.mean(
             (estimates["voice"] - refs["voice"]) ** 2))),
+        "voice_vs_unprocessed_mixture": {
+            "mixture_si_sdr_db": voice_baseline_si,
+            "mixture_sdr_db": voice_baseline_sdr,
+            "estimated_si_sdr_improvement_db":
+                voice_si - voice_baseline_si if voice_si is not None and voice_baseline_si is not None else None,
+            "estimated_sdr_improvement_db":
+                voice_sdr - voice_baseline_sdr if voice_sdr is not None and voice_baseline_sdr is not None else None,
+        },
     }
     return result
 
@@ -116,7 +131,37 @@ def self_test():
     ref, est = align(signal, np.concatenate((np.zeros((1024, 2)), signal)), 1024)
     assert np.array_equal(ref, est)
     assert abs(sdr(signal, 0.5 * signal) - 6.0205999) < 1e-4
-    print("Benchmark metric and alignment self-test passed")
+    # Make a small WAV fixture using real file I/O to verify baseline and
+    # multi-variant latency handling. These are synthetic fixtures, not a
+    # substitute for real multi-singer validation.
+    import tempfile
+    with tempfile.TemporaryDirectory() as folder:
+        base = Path(folder)
+        for directory in (base / "refs", base / "renders" / "exact", base / "renders" / "poor"):
+            directory.mkdir(parents=True)
+        stems = {
+            "voice": rng.normal(0, .08, (8192, 2)),
+            "ambience": rng.normal(0, .03, (8192, 2)),
+            "reverb": rng.normal(0, .01, (8192, 2)),
+        }
+        for name, wav in stems.items():
+            sf.write(str(base / "refs" / (name + ".wav")), wav, 48000, subtype="FLOAT")
+            sf.write(str(base / "renders" / "exact" / (name + ".wav")),
+                     np.pad(wav, ((2880, 0), (0, 0))), 48000, subtype="FLOAT")
+        # Wrong attribution to a voice-only stem must fail the improvement check.
+        mix = sum(stems.values())
+        for name in STEMS:
+            wave = mix if name == "voice" else np.zeros_like(mix)
+            sf.write(str(base / "renders" / "poor" / (name + ".wav")),
+                     np.pad(wave, ((1024, 0), (0, 0))), 48000, subtype="FLOAT")
+        exact = benchmark(base, "exact", 2880)
+        poor = benchmark(base, "poor", 1024)
+        assert exact["stems"]["voice"]["sdr_db"] > 100.0
+        assert exact["voice_vs_unprocessed_mixture"]["estimated_sdr_improvement_db"] > 10.0
+        assert abs(poor["voice_vs_unprocessed_mixture"]["estimated_sdr_improvement_db"]) < 0.001
+        assert exact["unity_reconstruction_max_abs"] < 1e-6
+        assert poor["unity_reconstruction_max_abs"] < 1e-6
+    print("Benchmark metric, mixture baseline and WAV alignment self-tests passed")
 
 
 def main():
@@ -124,6 +169,8 @@ def main():
     parser.add_argument("case", nargs="?", type=Path)
     parser.add_argument("--variant", default="classical")
     parser.add_argument("--latency-samples", type=int, default=1024)
+    parser.add_argument("--baseline-variant", help="second render to compare with the requested variant")
+    parser.add_argument("--baseline-latency-samples", type=int, default=1024)
     parser.add_argument("--output", type=Path)
     parser.add_argument("--self-test", action="store_true")
     args = parser.parse_args()
@@ -133,6 +180,21 @@ def main():
     if args.case is None:
         parser.error("provide a case directory or --self-test")
     result = benchmark(args.case, args.variant, args.latency_samples)
+    if args.baseline_variant:
+        baseline = benchmark(args.case, args.baseline_variant, args.baseline_latency_samples)
+        improvement = {}
+        for stem in STEMS:
+            improvement[stem] = {}
+            for metric in ("sdr_db", "si_sdr_db"):
+                after = result["stems"][stem][metric]
+                before = baseline["stems"][stem][metric]
+                improvement[stem][metric + "_change"] = (
+                    after - before if after is not None and before is not None else None)
+        result["comparison"] = {
+            "baseline_variant": args.baseline_variant,
+            "baseline_latency_samples": args.baseline_latency_samples,
+            "stem_metric_changes_db": improvement,
+        }
     rendered = json.dumps(result, indent=2, allow_nan=False)
     if args.output:
         args.output.write_text(rendered + "\n", encoding="utf-8")

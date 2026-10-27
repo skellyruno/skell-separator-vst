@@ -32,6 +32,8 @@ public:
         noiseFramesPerWindow = std::clamp(static_cast<int>(std::lround(0.085 * safeRate / 256.0)), 2, 256);
         silenceResetFrames = std::clamp(static_cast<int>(std::lround(0.256 * safeRate / 256.0)), 8, 512);
         magnitudeAttack = coefficient(0.015);
+        priorAttack = coefficient(0.012);
+        priorRelease = coefficient(0.065);
         tailDecay = static_cast<float>(std::exp(-256.0 / (safeRate * 0.23)));
         dryAttack = coefficient(0.006);
         dryRelease = coefficient(0.020);
@@ -40,7 +42,10 @@ public:
         for (int k = 0; k < bins; ++k)
         {
             const float frequency = static_cast<float>(k) * hzPerBin;
-            const float highPass = 0.22f + 0.78f * std::clamp((frequency - 65.0f) / 155.0f, 0.0f, 1.0f);
+            // Retain more low-register vocal fundamentals while fully rejecting DC.
+            // This changes ONLY the speech-likelihood prior, not the waveform.
+            const float highPass = frequency < 25.0f ? 0.0f
+                : 0.35f + 0.65f * std::clamp((frequency - 25.0f) / 175.0f, 0.0f, 1.0f);
             const float highShelf = 1.0f - 0.60f * std::clamp((frequency - 9000.0f) / 11000.0f, 0.0f, 1.0f);
             bandWeight[static_cast<std::size_t>(k)] = highPass * highShelf;
         }
@@ -56,6 +61,7 @@ public:
         smoothDry.fill(0.0f);
         smoothWet.fill(0.0f);
         smoothedMagnitude.fill(0.0f);
+        priorSpeechSnr.fill(0.0f);
         lateMemory.fill(0.0f);
         dryRaw.fill(0.0f);
         wetRaw.fill(0.0f);
@@ -122,6 +128,15 @@ public:
             const float snr = magnitude / (snrFloor * noise + 1.0e-5f);
             float fraction = (snr - 0.48f) / (snr + 0.9f);
             fraction = std::clamp(fraction, 0.0f, 0.97f);
+            // Decision-directed prior SNR: weak, isolated noise peaks are less
+            // likely to produce a strong voice mask than sustained harmonic
+            // evidence. No look-ahead, allocations or extra FFTs. This is a
+            // lightweight classical estimator, NOT a pretrained voice model.
+            const float posterior = std::clamp(snr * snr - 1.0f, 0.0f, 200.0f);
+            auto& prior = priorSpeechSnr[i];
+            prior += (posterior > prior ? priorAttack : priorRelease) * (posterior - prior);
+            const float wienerPrior = prior / (prior + 0.85f);
+            fraction *= 0.78f + 0.22f * wienerPrior;
             // Frequency weights are precomputed for the actual sample rate.
             const float broadBand = bandWeight[i];
             const float stereoSideRatio = side / (side + magnitude + 1.0e-6f);
@@ -152,15 +167,26 @@ public:
             dryRaw[i] = fraction * (1.0f - 0.40f * decaying);
         }
 
-        // Three-bin frequency smoothing and asymmetric temporal smoothing damp
-        // "musical-noise" chatter without delaying the audio by another frame.
+        // Energy-aware three-bin smoothing: avoid spreading a harmonic mask
+        // into an adjacent spectral hole. Ordinary 0.25/0.50/0.25 blur can
+        // leak singing-voice harmonics across empty FFT bins, yielding a
+        // metallic sideband in the complementary ambience stem. All masking
+        // remains causal and zero additional look-ahead is introduced.
         for (int k = 0; k < bins; ++k)
         {
             const auto i = static_cast<std::size_t>(k);
             const auto lo = static_cast<std::size_t>(std::max(0, k - 1));
             const auto hi = static_cast<std::size_t>(std::min(bins - 1, k + 1));
-            const float dryTarget = 0.25f * dryRaw[lo] + 0.50f * dryRaw[i] + 0.25f * dryRaw[hi];
-            const float wetTarget = 0.25f * wetRaw[lo] + 0.50f * wetRaw[i] + 0.25f * wetRaw[hi];
+            const float centre = std::isfinite(inputMag[i]) ? std::max(0.0f, inputMag[i]) : 0.0f;
+            const float lower = std::isfinite(inputMag[lo]) ? std::max(0.0f, inputMag[lo]) : 0.0f;
+            const float upper = std::isfinite(inputMag[hi]) ? std::max(0.0f, inputMag[hi]) : 0.0f;
+            const float lowWeight = 0.22f * std::min(1.0f, centre / (lower + 1.0e-5f));
+            const float highWeight = 0.22f * std::min(1.0f, centre / (upper + 1.0e-5f));
+            const float inverseWeight = 1.0f / (1.0f + lowWeight + highWeight);
+            const float dryTarget = (dryRaw[i] + lowWeight * dryRaw[lo]
+                                   + highWeight * dryRaw[hi]) * inverseWeight;
+            const float wetTarget = (wetRaw[i] + lowWeight * wetRaw[lo]
+                                   + highWeight * wetRaw[hi]) * inverseWeight;
             const float dryRate = dryTarget > smoothDry[i] ? dryAttack : dryRelease;
             const float wetRate = wetTarget > smoothWet[i] ? wetAttack : wetRelease;
             smoothDry[i] += dryRate * (dryTarget - smoothDry[i]);
@@ -179,9 +205,10 @@ private:
     int noiseFramesPerWindow = baseFramesPerWindow;
     int silenceResetFrames = 48;
     float magnitudeAttack = 0.36f, tailDecay = 0.95f;
+    float priorAttack = 0.30f, priorRelease = 0.08f;
     float dryAttack = 0.58f, dryRelease = 0.24f;
     float wetAttack = 0.30f, wetRelease = 0.14f;
-    Spectrum currentMin {}, smoothedMagnitude {}, lateMemory {}, dryRaw {}, wetRaw {}, bandWeight {};
+    Spectrum currentMin {}, smoothedMagnitude {}, priorSpeechSnr {}, lateMemory {}, dryRaw {}, wetRaw {}, bandWeight {};
     Spectrum smoothDry {}, smoothWet {};
     std::array<Spectrum, historyWindows> history {};
 };

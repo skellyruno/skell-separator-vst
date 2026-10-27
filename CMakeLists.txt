@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.22)
-project(SkellSeparator VERSION 1.4.0 LANGUAGES C CXX)
+project(SkellSeparator VERSION 1.8.0 LANGUAGES C CXX)
 
 # Uses the same JUCE FetchContent/Windows runner arrangement as the known-good
 # StopDial starter. Optional -DJUCE_PATH=... supports offline/local builds.
@@ -39,6 +39,7 @@ target_sources(SkellSeparator PRIVATE
     Source/dsp/MaskEstimator.h
     Source/dsp/StreamingNeural.h Source/dsp/StreamingNeural.cpp
     Source/dsp/LatencyAlignedStems.h
+    Source/dsp/NeuralVoiceBlend.h
     Source/dsp/StemMixer.h Source/dsp/StemMixer.cpp
     Source/dsp/SpectralAnalyzer.h Source/dsp/SpectralAnalyzer.cpp
     Source/ui/Theme.h Source/ui/Theme.cpp

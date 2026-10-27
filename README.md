@@ -1,3 +1,43 @@
+## v1.8 — Robust neural output validation (same latency and defaults)
+
+Neural inference output is now validated **as an entire 10 ms frame on the worker thread**: non-finite, out-of-range, and incompletely written model frames are rejected, the recurrent backend re-primes, and the existing crossfade returns safely to time-aligned classical stems. A separate rejected-frame counter appears in **About / Model Status**. RNNoise input is constrained to the PCM range; the classical DSP input boundary also rejects non-finite audio. Both new regression cases run in CI.
+
+The **785 × 448 default UI** and **three 0.0 dB defaults**, parameter IDs, and fixed 1,024 / 2,880-sample latency contracts are unchanged. We *rejected* experimental mask edits that reduced objective speech/noise separation metrics; no improvement to singing-vocal isolation is claimed. **Windows JUCE compilation and FL Studio integration remain unverified.**
+
+[Engineering changes, tests, CPU snapshot, and remaining limitations](docs/V1_8_INFERENCE_SAFETY_AND_VALIDATION.md).
+
+---
+
+## v1.7 — Spoken-speech benchmarking, causal Wiener prior and regression safety
+
+Reviewed the five newly uploaded audio-tool archives. None contains a trained, properly redistributable *streaming three-stem* model for the JUCE VST3; **no uploaded third-party code, audio or weights are copied**. A small original decision-directed spectral SNR prior is now incorporated into the classical noise mask estimator. The updated source also includes an actual C++ render / WAV reference benchmark harness and a latency+reconstruction smoke test wired into DSP CI.
+
+**Measured result:** Six controlled clean-speech/noise scenarios improved by +0.114 dB mean SI-SDR over v1.6. Six transfer cases on another speaker showed no average change (individual cases varied). This is **not** evidence of improved separation of singing voice from music. UI stays 785×448 by default with all three knobs at 0 dB; no automation IDs or latency contracts changed. Fixed classical latency 1024 samples, optional RNNoise build 2880 samples. Windows JUCE/FL Studio build still unverified.
+
+[Full source audit, reproducible measurements, profiling and limitations](docs/V1_7_ADAPTIVE_SPEECH_BENCHMARK.md).
+
+---
+
+## v1.6 — License audit + dropout-safe neural handoff
+
+Reviewed the supplied Voiceolation, Vocal Music Separation and Vocal Remover sources. All three contain permissive source licenses but **no bundled trained model weights**, and their offline patch/context lengths cannot be inserted unchanged into a 60 ms streaming VST3. No third-party model or code is bundled.
+
+Fixed a real neural deadline-miss defect: the previous fallback crossfade could blend the classical Voice stem against an **absent zero-valued neural frame**, creating a short level collapse and energy spike in Ambience. The new fixed-size neural handoff fades the last valid *neural correction* toward the aligned classical stem, then fades in the next valid model frame. Three-stem unity reconstruction is preserved. Added dropout, recovery, invalid-output and WAV benchmark-alignment regressions. Expanded the vocal benchmark with unprocessed-mixture baselines and two-variant comparisons (accounting for different fixed latencies).
+
+[Full v1.6 source-license/architecture review and validation](docs/V1_6_MODEL_AUDIT_AND_VALIDATION.md).
+
+---
+
+## Latest update — v1.5 (compact UI + low-voice masks)
+
+**New instances default to 785 × 448 pixels** (75% of the v1.4 default), with **Ambience / Voice / Voice Reverb all at 0.0 dB**. The header's preset arrows and menu are vector graphics to eliminate the corrupted Windows glyphs, and numeric gain readouts no longer have large black outline boxes. The JUCE editor remains resizable at a fixed aspect ratio.
+
+Spectral masking now retains more low-register vocal fundamentals and avoids spreading high-energy harmonic masks into quiet adjacent FFT bins. All APVTS parameter IDs, bypass compensation, and latency contracts remain unchanged. Existing saved projects preserve their stored settings (including their previous knob values and scale); Reset All applies the new defaults.
+
+[Engineering details, test results and limitations](docs/V1_5_COMPACT_AND_DSP.md).
+
+---
+
 # skell-separator-vst
 
 **Skell Separator** — original dark-themed, three-stem JUCE audio effect, inspired by the supplied reference images (not branded as GOYO).
@@ -17,7 +57,7 @@ Reverb remains a classical estimate. See
 - **Stereo** shared-mid masking (L/R image preserved) and **Mono** sum-to-mono mode.
 - Dynamic spectral energy silhouettes, radial tick knobs, responsive idle/active glows, contextual menu, factory presets, and resizeable 1047:597 window.
 - STFT front-end: **1024-point FFT / 256-hop sqrt-Hann**, basic adaptive Wiener-style noise estimation and late-energy reverb estimation.
-- **Exact complement architecture:** ambience = delayed processed input - (dry voice + voice reverb). At 0 dB gains without mute/solo, the sum should equal the delayed input up to float rounding, even while masks are changing. Default preset intentionally has Ambience and Reverb at -17 dB.
+- **Exact complement architecture:** ambience = delayed processed input - (dry voice + voice reverb). At 0 dB gains without mute/solo, the sum should equal the delayed input up to float rounding, even while masks are changing. In v1.5 the default preset has all three stems at 0 dB; Solo or Mute stems to audition separation.
 - Host-reported fixed **1024-sample latency** in the fallback path. "Gentle", "Balanced", "Strong" adjust estimation aggressiveness, **not the algorithmic delay**. A switch to a different model / window size would require latency re-reporting and host re-synchronization.
 - Bypass is click-free 10 ms crossfade to the **latency-matched original dry input**, retaining the original stereo channels even when Mono mode is selected; it cannot output instantaneous dry while preserving plugin delay compensation.
 - All processing state allocated before playback; no I/O, allocations, blocking or model loading in the audio callback. RNNoise uses a worker thread and preallocated bounded queues; late outputs fall back to aligned classical processing.

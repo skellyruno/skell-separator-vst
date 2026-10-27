@@ -50,6 +50,12 @@ void Separator::reset() noexcept
 void Separator::processSample(float left, float right, float monoBlend, int quality,
                               Stems& output, std::array<float, channels>& originalDelayed) noexcept
 {
+    // Guard this DSP boundary as well as PluginProcessor: standalone renders
+    // and future model backends must not poison the FFT overlap/history after
+    // a single non-finite/host-overrange sample.
+    left = std::isfinite(left) ? std::clamp(left, -8.0f, 8.0f) : 0.0f;
+    right = std::isfinite(right) ? std::clamp(right, -8.0f, 8.0f) : 0.0f;
+    monoBlend = std::isfinite(monoBlend) ? std::clamp(monoBlend, 0.0f, 1.0f) : 0.0f;
     const auto i = currentSample;
     const auto ringIndex = static_cast<size_t>(i & (ringSize - 1));
     const auto historyIndex = static_cast<size_t>(i & (fftSize - 1));

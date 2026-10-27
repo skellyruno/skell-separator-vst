@@ -1,0 +1,1 @@
+{"engine":"classical_only","sample_rate":96000,"block_size":256,"audio_seconds":5,"callback_mean_us":126.654,"callback_p95_us":175.979,"callback_p99_us":290.509,"callback_max_us":2573.433,"block_deadline_us":2666.667,"mean_deadline_pct":4.750,"deadline_misses":0,"blocks":1875,"checksum":-1.135}

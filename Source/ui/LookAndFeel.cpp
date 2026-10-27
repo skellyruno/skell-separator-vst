@@ -45,3 +45,14 @@ void SeparatorLookAndFeel::drawPopupMenuItem(juce::Graphics& g,
     g.drawText((ticked ? "  * " : "    ") + name, bounds.reduced(6), juce::Justification::centredLeft);
     g.drawText(shortcut, bounds.reduced(10), juce::Justification::centredRight);
 }
+
+// The Slider-owned Label is the readout: no rectangular outlined text box.
+// JUCE retains its normal double-click/right-click editable text behaviour.
+void SeparatorLookAndFeel::drawLabel(juce::Graphics& g, juce::Label& label)
+{
+    if (label.isBeingEdited()) return; // Do not paint over the numeric text editor.
+    g.setColour(label.findColour(juce::Label::textColourId));
+    g.setFont(getLabelFont(label));
+    g.drawFittedText(label.getText(), label.getLocalBounds().reduced(2),
+                     juce::Justification::centred, 1, 0.9f);
+}
