@@ -117,7 +117,7 @@ void SkellSeparatorAudioProcessorEditor::applyScale(int percent)
 void SkellSeparatorAudioProcessorEditor::showMenu()
 {
     juce::PopupMenu popup;
-    popup.addSectionHeader("SKELL SEPARATOR  /  1.10");
+    popup.addSectionHeader("SKELL SEPARATOR  /  1.11");
     popup.addItem(1, "Reset All");
     popup.addItem(2, "Copy Settings to Clipboard");
     popup.addItem(3, "Input Mono Sum", true,
@@ -218,7 +218,7 @@ void SkellSeparatorAudioProcessorEditor::showMenu()
                         << "Dropped: " << juce::String(static_cast<juce::int64>(p.getNeuralQueueDropped())) << "\n"
                         << "Rejected: " << juce::String(static_cast<juce::int64>(p.getNeuralRejectedFrames()));
                 juce::AlertWindow::showMessageBoxAsync(juce::MessageBoxIconType::InfoIcon,
-                    "Skell Separator — Processing Engine", "Skell Separator 1.10\n\n" + details,
+                    "Skell Separator — Processing Engine", "Skell Separator 1.11\n\n" + details,
                     "OK", safe.getComponent());
             }
         });

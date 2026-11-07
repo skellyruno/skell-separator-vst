@@ -55,6 +55,32 @@ int main() {
             for (const float value : stem) assert(std::isfinite(value));
         assert(std::abs(s[0][0] + s[1][0] + s[2][0] - 1.0f) < 1e-6f);
     }
+    // The experimental neural model overestimates music-only voice energy.
+    // With the opt-in safety guard the correction stays bounded and smooth,
+    // while complementary reconstruction remains exact sample by sample.
+    skell::NeuralVoiceBlend guarded;
+    guarded.reset();
+    float previous = 0.5f;
+    for (int i = 0; i < 900; ++i) {
+        auto s = makeStems();
+        guarded.apply(s, true, { 3.5f, -3.5f }, true);
+        for (int ch = 0; ch < 2; ++ch) {
+            assert(std::isfinite(s[1][ch]));
+            assert(std::abs(s[1][ch] - 0.50f) <= 0.045f);
+            assert(std::abs(s[0][ch] + s[1][ch] + s[2][ch] - 1.0f) < 1e-6f);
+        }
+        assert(std::abs(s[1][0] - previous) < 0.003f);
+        previous = s[1][0];
+    }
+    // Near silence should not turn a large neural output into an audible burst.
+    guarded.reset();
+    for (int i = 0; i < 300; ++i) {
+        auto s = makeStems();
+        s[0][0] += s[1][0]; s[1][0] = 0.0f;
+        guarded.apply(s, true, { 1.0f, -1.0f }, true);
+        assert(std::abs(s[1][0]) <= 0.0021f);
+        assert(std::abs(s[0][0] + s[1][0] + s[2][0] - 1.0f) < 1e-6f);
+    }
     // A model stall must not cause allocations, saturation or timing changes.
     std::cout << "neural dropout/recovery crossfade: PASS\n";
 }

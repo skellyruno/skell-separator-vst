@@ -64,6 +64,8 @@ int main(int argc, char** argv) {
     skell::NeuralVoiceBlend blender;
     blender.reset();
     double worst = 0.0;
+    const bool guard = !(std::getenv("SKELL_NEURAL_GUARD") &&
+                         std::string(std::getenv("SKELL_NEURAL_GUARD")) == "0");
     for (int64_t sample = 0; sample < length; ++sample) {
         const float inL = sample < total ? data[static_cast<size_t>(sample*2)] : 0.0f;
         const float inR = sample < total ? data[static_cast<size_t>(sample*2+1)] : 0.0f;
@@ -78,7 +80,9 @@ int main(int argc, char** argv) {
                 const auto c = static_cast<size_t>(ch);
                 candidate[c] = (1.0f-strength)*stems[1][c] + strength*neuralVoice[static_cast<size_t>(sample*2+ch)];
             }
-        blender.apply(stems, ready, candidate);
+        // Compare the current bounded production correction against v1.10
+        // with SKELL_NEURAL_GUARD=0 in the offline reference harness.
+        blender.apply(stems, ready, candidate, guard);
         for (int ch = 0; ch < 2; ++ch) {
             const float reconstructed = stems[0][static_cast<size_t>(ch)] + stems[1][static_cast<size_t>(ch)] + stems[2][static_cast<size_t>(ch)];
             worst = std::max(worst, std::abs(static_cast<double>(reconstructed - dry[static_cast<size_t>(ch)])));

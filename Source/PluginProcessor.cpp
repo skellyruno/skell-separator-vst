@@ -194,7 +194,13 @@ void SkellSeparatorAudioProcessor::processAudio(juce::AudioBuffer<float>& b, boo
                     neuralVoice[ch] = (1.0f - neuralStrength) * stemSamples[1][ch]
                                       + neuralStrength * neuralVoice[ch];
             }
+            // Conservative correction guard applies ONLY to synthetic-trained
+            // TinyVocalNet, not the separately licensed RNNoise backend.
+#if defined(SKELL_WITH_TINY_VOCAL) && SKELL_WITH_TINY_VOCAL
+            neuralBlend.apply(stemSamples, available && neuralSelected, neuralVoice, true);
+#else
             neuralBlend.apply(stemSamples, available && neuralSelected, neuralVoice);
+#endif
         } else {
             // Smoothly return to classical when a model is unavailable.
             neuralBlend.apply(stemSamples, false, {});

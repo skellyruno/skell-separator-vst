@@ -19,13 +19,14 @@ public:
         transition = transitionSamples;
         transitionFrom = {};
         lastCorrection = {};
+        classicalEnvelope = {};
     }
 
     // `candidate` is aligned to the SAME original input sample as the
     // classical stems. When absent, fade out the final known correction,
     // *not* a zero neural waveform. When a new frame is available, fade in
     // its true, time-varying samples without filtering the steady-state model.
-    void apply(Separator::Stems& stems, bool available, const Stereo& candidate) noexcept {
+    void apply(Separator::Stems& stems, bool available, const Stereo& candidate, bool protectiveGuard = false) noexcept {
         for (float v : candidate)
             if (!std::isfinite(v) || std::abs(v) > 8.0f)
                 available = false;
@@ -41,7 +42,17 @@ public:
             const auto c = static_cast<std::size_t>(ch);
             const float original = stems[0][c] + stems[1][c] + stems[2][c];
             const float dry = stems[1][c];
-            const float neuralCorrection = available ? candidate[c] - dry : 0.0f;
+            float neuralCorrection = available ? candidate[c] - dry : 0.0f;
+            if (protectiveGuard && available) {
+                // Original experimental synthetic model is not validated on
+                // actual music. Trust-region limits both instrument leakage
+                // and vocal/transient removal against the established DSP.
+                // Smooth limiting instead of a hard sample clip avoids new
+                // high-frequency edges. Fixed state, zero allocations.
+                classicalEnvelope[c] = std::max(std::abs(dry), classicalEnvelope[c] * 0.9985f);
+                const float bound = .08f * classicalEnvelope[c] + .002f;
+                neuralCorrection *= bound / std::sqrt(bound * bound + neuralCorrection * neuralCorrection);
+            }
             const float correction = transitionFrom[c] * (1.0f - amount)
                                    + neuralCorrection * (available ? amount : 0.0f);
             const float voice = dry + correction;
@@ -54,6 +65,6 @@ public:
 private:
     bool previousAvailable = false;
     int transition = transitionSamples;
-    Stereo transitionFrom {}, lastCorrection {};
+    Stereo transitionFrom {}, lastCorrection {}, classicalEnvelope {};
 };
 }

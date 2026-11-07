@@ -1,3 +1,11 @@
+## v1.11 (2026-11-07)
+
+- Constrained synthetic-model neural corrections after reference-based speech/music leakage tests showed large v1.10 regressions.
+- Added repeatable real singing/isolated stem benchmark harness with measured null-vocal leakage, consonant onsets, optional known reverb send, and exact latency alignment.
+- Added rights-aware candidate training script with artist-disjoint validation; no unverified real-audio weights shipped.
+- Added neural-correction regression test and benchmark self-test in CI.
+- Kept 60ms/48k fixed neural latency, classical fallback, 785x448 UI, and 0dB defaults.
+
 ## 1.10.0 — Engine-select UI and CPU-safe neural pausing
 
 - Polished all three stem panels with clearer status and Solo/Mute affordances.

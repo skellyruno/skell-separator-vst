@@ -40,5 +40,10 @@ jobs:
           python -m pip install numpy soundfile
           python tests/benchmark_vocals.py --self-test
           python tests/offline_tiny_render_smoke.py
+      - name: Real-stem benchmark harness smoke test (synthetic fixture; no real audio in repository)
+        run: |
+          python -m pip install scipy
+          python tests/real_vocal_quality.py --self-test
+          python -m py_compile models/train_real_stems.py
       - name: Classical CPU baseline (diagnostic, not a pass/fail threshold)
         run: bash tests/run_cpu_profile.sh 48000 256 8

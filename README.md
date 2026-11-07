@@ -1,3 +1,14 @@
+# v1.11 — Neural leakage guard, real-stem validation, and candidate training
+
+- Added a conservative, smooth neural-correction guard for the experimental TinyVocalNet path. It constrains errors relative to the validated classical estimate while preserving latency and three-stem reconstruction.
+- Recorded **spoken-voice** test mixtures show reduced instrumental-only false Voice energy and improved Voice SI-SDR relative to v1.10 Neural. However Classical still beats Neural on those test mixtures. Singing, true wet-only vocal reverb, and full-song quality **remain unverified**.
+- New `tests/real_vocal_quality.py`: reference-aligned C++ render comparison with instrumental leakage, HF vocal onset, optional wet-only or simulated reverb and reconstruction metrics. No external audio bundled.
+- New `models/train_real_stems.py`: separately licensed real-data candidate training with artist-disjoint validation and provenance, never auto-promotes weights to production.
+
+[Objective validation and dataset requirements](docs/V1_11_QUALITY_VALIDATION.md).
+
+---
+
 # v1.10 — Compact UI and dormant neural worker (November 2026)
 
 - Three subtly raised stem panels with consistent edge lighting, clear
