@@ -1,0 +1,40 @@
+{
+  "version": "1.9.0",
+  "model": "TinyVocalNet original procedural-synthetic 64x48x64 neural spectral mask",
+  "sample_rate_supported_hz": 48000,
+  "input_frame_samples": 480,
+  "wola_window_samples": 960,
+  "fft_size": 1024,
+  "latency_samples": 2880,
+  "reference_benchmark": "procedural-only, NOT licensed real singing",
+  "heldout_synthetic_weighted_mask_mse": {
+    "model": 0.045568,
+    "constant_50_pct": 0.186163,
+    "zero_mask": 0.133163
+  },
+  "synthetic_si_sdr_db": [
+    {
+      "condition": 0,
+      "mixture": -5.78,
+      "neural": -3.6
+    },
+    {
+      "condition": 1,
+      "mixture": -4.69,
+      "neural": -1.21
+    },
+    {
+      "condition": 2,
+      "mixture": -7.16,
+      "neural": -6.54
+    }
+  ],
+  "max_unity_mask_wola_sample_error": 2.38419e-07,
+  "max_cpp_render_three_stem_reconstruction_error": 3.472624204858832e-08,
+  "worker_only_inference_mean_microseconds_linux_gcc": 54,
+  "worker_only_inference_mean_microseconds_linux_clang": 40,
+  "sanitizer_test": "passed",
+  "windows_juce_build": "not run",
+  "fl_studio_host_test": "not run",
+  "real_singing_quality": "unmeasured"
+}

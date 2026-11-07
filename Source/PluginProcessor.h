@@ -41,7 +41,20 @@ public:
     std::atomic<juce::uint32> audioBlockCounter { 0 };
     static juce::AudioProcessorValueTreeState::ParameterLayout makeLayout();
     void resetAllParameters();
-    bool isNeuralRunning() const noexcept { return neural.active(); }
+    bool isNeuralRunning() const noexcept {
+        return neural.active() && engineModeParam != nullptr &&
+               engineModeParam->load(std::memory_order_relaxed) > 0.5f;
+    }
+    bool hasNeuralBackend() const noexcept { return neural.active(); }
+    const char* neuralBackendName() const noexcept {
+#if defined(SKELL_WITH_TINY_VOCAL) && SKELL_WITH_TINY_VOCAL
+        return "Tiny Vocal Mask — synthetic-trained experimental model";
+#elif defined(SKELL_WITH_RNNOISE) && SKELL_WITH_RNNOISE
+        return "RNNoise — speech denoiser";
+#else
+        return "No neural backend compiled";
+#endif
+    }
     std::uint64_t getNeuralMissedFrames() const noexcept { return neural.missedDeadlines(); }
     std::uint64_t getNeuralQueueDropped() const noexcept { return neural.droppedFrames(); }
     std::uint64_t getNeuralRejectedFrames() const noexcept { return neural.rejectedFrames(); }
@@ -67,6 +80,9 @@ private:
     std::atomic<float>* modeParam = nullptr;
     std::atomic<float>* bypassParam = nullptr;
     std::atomic<float>* qualityParam = nullptr;
+    std::atomic<float>* engineModeParam = nullptr;
+    std::atomic<float>* neuralStrengthParam = nullptr;
+    juce::SmoothedValue<float, juce::ValueSmoothingTypes::Linear> strengthSmoothing;
     std::atomic<int> uiScale { 75 }, presetIndex { 0 };
     std::atomic<bool> circularKnobs { false };
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(SkellSeparatorAudioProcessor)

@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.22)
-project(SkellSeparator VERSION 1.8.0 LANGUAGES C CXX)
+project(SkellSeparator VERSION 1.9.0 LANGUAGES C CXX)
 
 # Uses the same JUCE FetchContent/Windows runner arrangement as the known-good
 # StopDial starter. Optional -DJUCE_PATH=... supports offline/local builds.
@@ -77,4 +77,15 @@ if(SKELL_ENABLE_RNNOISE)
     target_link_libraries(SkellSeparator PRIVATE "${RNNOISE_LIBRARY}")
     target_compile_definitions(SkellSeparator PRIVATE SKELL_WITH_RNNOISE=1)
     message(STATUS "Skell RNNoise enabled; fixed reported latency is 2880 samples")
+endif()
+
+# Tiny neural mask runs natively in C++, using original, reproducible synthetic
+# training weights. It is an EXPERIMENTAL music-vocal demonstration, not a
+# commercially benchmarked singing separator. RNNoise remains optional.
+option(SKELL_ENABLE_TINY_NEURAL "Compile original experimental trained vocal-mask model" ON)
+if(SKELL_ENABLE_TINY_NEURAL)
+    target_sources(SkellSeparator PRIVATE Source/dsp/TinyVocalNet.h Source/dsp/TinyVocalNet.cpp
+        models/TinyVocalWeights.h)
+    target_compile_definitions(SkellSeparator PRIVATE SKELL_WITH_TINY_VOCAL=1)
+    message(STATUS "Skell Tiny Neural compiled; latency 2880 samples (60 ms at 48 kHz), default engine Classical")
 endif()

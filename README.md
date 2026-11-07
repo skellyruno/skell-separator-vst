@@ -1,3 +1,43 @@
+# v1.9 — Experimental trained neural singing-mask foundation (November 2026)
+
+**This ZIP now contains an ORIGINAL, TRAINED neural spectral-mask model and a
+running C++ stereo real-time inference backend**, unlike the previous RNNoise-
+only source. It is **a research-quality proof of concept**, trained solely on
+procedurally generated voice-like harmonics and synthesized accompaniment—not
+on real singing, professional music stems, or a major separation corpus.
+**Do not describe it as commercial-quality vocal isolation.**
+
+- New optional **Neural Experimental** engine in the menu (default remains
+  **Classical** for existing projects). A separate **Neural Strength** menu
+  defaults to 65%, so harsh synthetic-model masks can be auditioned safely.
+- The tiny 64-band, 48-unit MLP runs in a 48 kHz / 10 ms streaming worker.
+  Stereo 960-sample sqrt-Hann WOLA uses a 1024-point FFT and preserves native
+  stereo phase. All channels use the same trained mask; the three existing
+  Ambience / Voice / Voice Reverb controls remain.
+- Worker queue, dropout crossfade, 2,880-sample aligned bypass and complement-
+  preserving classical reverb stem are retained. Inference is never performed
+  inside the host's audio thread. When the neural model is unavailable (wrong
+  sample rate / deadline miss), the plugin falls back to the time-aligned
+  classical separator. No real-time resampler is included yet.
+- The CMake default **builds the research model** (`SKELL_ENABLE_TINY_NEURAL=ON`)
+  and keeps it OFF in the playback settings by default. To compile classical-
+  only, set `-DSKELL_ENABLE_TINY_NEURAL=OFF` (and leave RNNoise off). Legacy
+  project automation IDs, stem gain defaults, and the 785×448 window are kept.
+- No third-party recordings, neural checkpoints or SDKs are redistributed.
+  `models/train_tiny_voice.py` reproduces the training process with NumPy and
+  PyTorch; the generated `TinyVocalWeights.h` is included in the normal build.
+  PyTorch is NOT required to build or run the VST3.
+- See [v1.9 engineering notes](docs/V1_9_TINY_NEURAL.md) for exact tests,
+  known limitations, and a realistic path to an appropriately licensed
+  real-singing model.
+
+**Licensing note:** The original demo network and weights may be used in this
+project; JUCE has its own redistribution terms. The full commercial singing
+weights of third-party projects have different rights and computational costs.
+Do not import weights based solely on the code repository's license.
+
+---
+
 ## v1.8 — Robust neural output validation (same latency and defaults)
 
 Neural inference output is now validated **as an entire 10 ms frame on the worker thread**: non-finite, out-of-range, and incompletely written model frames are rejected, the recurrent backend re-primes, and the existing crossfade returns safely to time-aligned classical stems. A separate rejected-frame counter appears in **About / Model Status**. RNNoise input is constrained to the PCM range; the classical DSP input boundary also rejects non-finite audio. Both new regression cases run in CI.
@@ -86,12 +126,13 @@ cmake -S . -B build -A x64 -DJUCE_PATH="C:/JUCE"
 
 ## Optional neural build (v1.4)
 
-The default `build.yml` is **unchanged** and compiles classical only. To enable
+In v1.9 the default `build.yml` now compiles the original Tiny Neural model,
+but the playback engine defaults to Classical. To enable
 RNNoise, build/install the upstream C library separately and configure
 `-DSKELL_ENABLE_RNNOISE=ON -DRNNOISE_ROOT=<prefix>` as documented in
 [`docs/V1_4_STREAMING_NEURAL.md`](docs/V1_4_STREAMING_NEURAL.md).
-RNNoise-linked builds use **2,880-sample fixed host latency**, including bypass
-and fallback (60 ms at 48 kHz); classical-only builds retain 1,024 samples.
+Tiny Neural or RNNoise builds use **2,880-sample fixed host latency**, including
+bypass and fallback (60 ms at 48 kHz); classical-only builds retain 1,024 samples.
 
 ## Controls
 

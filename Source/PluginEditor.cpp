@@ -117,7 +117,7 @@ void SkellSeparatorAudioProcessorEditor::applyScale(int percent)
 void SkellSeparatorAudioProcessorEditor::showMenu()
 {
     juce::PopupMenu popup;
-    popup.addSectionHeader("SKELL SEPARATOR  /  1.8");
+    popup.addSectionHeader("SKELL SEPARATOR  /  1.9");
     popup.addItem(1, "Reset All");
     popup.addItem(2, "Copy Settings to Clipboard");
     popup.addItem(3, "Input Mono Sum", true,
@@ -129,6 +129,17 @@ void SkellSeparatorAudioProcessorEditor::showMenu()
     quality.addItem(11, "Balanced", true, qualityIndex == 1);
     quality.addItem(12, "Strong (more suppression)", true, qualityIndex == 2);
     popup.addSubMenu("Separation Quality", quality);
+    juce::PopupMenu engines;
+    const bool experimental = processor.apvts.getRawParameterValue("engineMode")->load() > 0.5f;
+    engines.addItem(60, "Classical (stable)", true, !experimental);
+    engines.addItem(61, "Neural (experimental, 48 kHz only)", processor.hasNeuralBackend(), experimental);
+    popup.addSubMenu("Processing Engine", engines);
+    juce::PopupMenu strengthMenu;
+    const float currentStrength = processor.apvts.getRawParameterValue("neuralStrength")->load();
+    for (int amount : { 25, 50, 65, 75, 100 })
+        strengthMenu.addItem(300 + amount, juce::String(amount) + "%", true,
+                             std::abs(currentStrength * 100.0f - amount) < 0.5f);
+    popup.addSubMenu("Neural Strength", strengthMenu);
     juce::PopupMenu modes;
     modes.addItem(20, "Vertical Drag", true, !processor.getKnobCircular());
     modes.addItem(21, "Circular Drag", true, processor.getKnobCircular());
@@ -153,7 +164,7 @@ void SkellSeparatorAudioProcessorEditor::showMenu()
                 for (const auto& id : { "ambienceGain", "voiceGain", "reverbGain",
                                         "ambienceSolo", "voiceSolo", "reverbSolo",
                                         "ambienceMute", "voiceMute", "reverbMute",
-                                        "channelMode", "bypass", "quality" })
+                                        "channelMode", "bypass", "quality", "engineMode", "neuralStrength" })
                     out << id << " = " << p.apvts.getRawParameterValue(id)->load() << "\n";
                 juce::SystemClipboard::copyTextToClipboard(out);
             }
@@ -167,28 +178,47 @@ void SkellSeparatorAudioProcessorEditor::showMenu()
                 }
             }
             else if (result >= 10 && result <= 12) editor.chooseQuality(result - 10);
+            else if (result == 60 || result == 61)
+            {
+                if (auto* prm = p.apvts.getParameter("engineMode"))
+                {
+                    prm->beginChangeGesture();
+                    prm->setValueNotifyingHost(prm->convertTo0to1(result == 61 ? 1.0f : 0.0f));
+                    prm->endChangeGesture();
+                }
+            }
+            else if (result >= 325 && result <= 400)
+            {
+                if (auto* prm = p.apvts.getParameter("neuralStrength"))
+                {
+                    prm->beginChangeGesture();
+                    prm->setValueNotifyingHost(prm->convertTo0to1((result - 300) * 0.01f));
+                    prm->endChangeGesture();
+                }
+            }
             else if (result == 20 || result == 21) p.setKnobCircular(result == 21);
             else if (result == 175 || result == 200 || result == 225 || result == 250)
                 editor.applyScale(result - 100);
             else if (result == 50)
             {
-                const bool neural = p.isNeuralRunning();
-                const juce::String details = neural
-                    ? (juce::String("RNNoise / speech enhancement active (48 kHz only).\n"
-                       "RNNoise does NOT isolate singing reliably from dense music and is NOT dereverberation.\n"
-                       "Voice Reverb remains classical.\n"
-                       "Latency: 2880 samples (60 ms @ 48 kHz).\n"
-                       "Worker inference mean: ") + juce::String(p.getNeuralWorkerMeanUs(), 1) + " us/frame\n"
-                       "Worker inference max: " + juce::String(static_cast<juce::int64>(p.getNeuralWorkerMaxUs())) + " us/frame\n"
-                       "Missed frames: " + juce::String(static_cast<juce::int64>(p.getNeuralMissedFrames())) + "\n"
-                       "Dropped queued frames: " + juce::String(static_cast<juce::int64>(p.getNeuralQueueDropped())) + "\n"
-                       "Rejected corrupt frames: " + juce::String(static_cast<juce::int64>(p.getNeuralRejectedFrames())))
-                    : "Classical STFT fallback is active.\n"
-                      "No neural model is running; either RNNoise is not linked, or the sample rate is not 48 kHz.\n"
-                      "The three stems are estimated, not true clean source separation.\n"
-                      "Original build latency: 1024 samples. RNNoise-enabled build: 2880 samples (all rates).";
+                const bool loaded = p.hasNeuralBackend();
+                const bool active = p.isNeuralRunning();
+                juce::String details = "Engine: ";
+                details << p.neuralBackendName() << "\n"
+                        << "Selected: " << (active ? "EXPERIMENTAL NEURAL" : "Classical") << "\n"
+                        << "Strength: " << juce::String(p.apvts.getRawParameterValue("neuralStrength")->load() * 100.0f, 0) << "%\n"
+                        << "Backend available: " << (loaded ? "Yes" : "No (requires 48 kHz)") << "\n"
+                        << "Tiny Vocal weights were trained ONLY on original procedural mixtures.\n"
+                        << "Not validated on licensed singing/music recordings.\n"
+                        << "Reverb remains a classical estimate.\n"
+                        << "Host latency: " << p.getLatencySamples() << " samples.\n"
+                        << "Worker mean: " << juce::String(p.getNeuralWorkerMeanUs(), 1) << " us/frame\n"
+                        << "Worker maximum: " << juce::String(static_cast<juce::int64>(p.getNeuralWorkerMaxUs())) << " us/frame\n"
+                        << "Missed: " << juce::String(static_cast<juce::int64>(p.getNeuralMissedFrames())) << "\n"
+                        << "Dropped: " << juce::String(static_cast<juce::int64>(p.getNeuralQueueDropped())) << "\n"
+                        << "Rejected: " << juce::String(static_cast<juce::int64>(p.getNeuralRejectedFrames()));
                 juce::AlertWindow::showMessageBoxAsync(juce::MessageBoxIconType::InfoIcon,
-                    "Skell Separator — Processing Engine", "Skell Separator 1.8\n\n" + details,
+                    "Skell Separator — Processing Engine", "Skell Separator 1.9\n\n" + details,
                     "OK", safe.getComponent());
             }
         });

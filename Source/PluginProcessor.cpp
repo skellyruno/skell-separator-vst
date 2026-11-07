@@ -1,6 +1,9 @@
 #include "PluginProcessor.h"
 #include "PluginEditor.h"
+#include "dsp/TinyVocalNet.h"
 #include <cmath>
+#include <memory>
+#include <utility>
 
 SkellSeparatorAudioProcessor::SkellSeparatorAudioProcessor()
     : AudioProcessor(BusesProperties().withInput("Input", juce::AudioChannelSet::stereo(), true)
@@ -19,6 +22,8 @@ SkellSeparatorAudioProcessor::SkellSeparatorAudioProcessor()
     modeParam = apvts.getRawParameterValue("channelMode");
     bypassParam = apvts.getRawParameterValue("bypass");
     qualityParam = apvts.getRawParameterValue("quality");
+    engineModeParam = apvts.getRawParameterValue("engineMode");
+    neuralStrengthParam = apvts.getRawParameterValue("neuralStrength");
 }
 
 juce::AudioProcessorValueTreeState::ParameterLayout SkellSeparatorAudioProcessor::makeLayout()
@@ -44,6 +49,12 @@ juce::AudioProcessorValueTreeState::ParameterLayout SkellSeparatorAudioProcessor
     layout.add(std::make_unique<juce::AudioParameterChoice>(
         juce::ParameterID { "quality", 1 }, "Quality",
         juce::StringArray { "Gentle", "Balanced", "Strong" }, 1));
+    layout.add(std::make_unique<juce::AudioParameterChoice>(
+        juce::ParameterID { "engineMode", 1 }, "Processing Engine",
+        juce::StringArray { "Classical", "Neural Experimental" }, 0));
+    layout.add(std::make_unique<juce::AudioParameterFloat>(
+        juce::ParameterID { "neuralStrength", 1 }, "Neural Strength",
+        juce::NormalisableRange<float>(0.0f, 1.0f, 0.01f), 0.65f));
     return layout;
 }
 
@@ -56,10 +67,20 @@ void SkellSeparatorAudioProcessor::prepareToPlay(double sampleRate, int)
     alignment.reset();
     neuralSampleIndex = 0;
     neuralBlend.reset();
-    // Model loading and thread startup happen at prepareToPlay, NOT on audio.
-    // No model at non-48 kHz: RNNoise has a strict 480/48 kHz contract.
-    neural.start(std::abs(sampleRate - 48000.0) < 0.5
-                 ? skell::createRNNoiseBackend() : nullptr);
+    strengthSmoothing.reset(sampleRate, 0.020);
+    strengthSmoothing.setCurrentAndTargetValue(neuralStrengthParam->load(std::memory_order_relaxed));
+    // Model selection/initialization happens ONLY in prepareToPlay, never on
+    // the host callback. This model's STFT/training is explicitly 48 kHz.
+    // When both are built, original Tiny Vocal takes precedence over RNNoise.
+    std::unique_ptr<skell::NeuralFrameBackend> backend;
+    if (std::abs(sampleRate - 48000.0) < 0.5) {
+#if defined(SKELL_WITH_TINY_VOCAL) && SKELL_WITH_TINY_VOCAL
+        backend = skell::createTinyVocalBackend();
+#elif defined(SKELL_WITH_RNNOISE) && SKELL_WITH_RNNOISE
+        backend = skell::createRNNoiseBackend();
+#endif
+    }
+    neural.start(std::move(backend));
     mixer.prepare(sampleRate);
     // Host state may be restored before prepare. Honor the saved settings on
     // the very first processed sample (especially a bypassed session).
@@ -125,6 +146,7 @@ void SkellSeparatorAudioProcessor::processAudio(juce::AudioBuffer<float>& b, boo
         mutes[ix] = muteParams[ix]->load(std::memory_order_relaxed) > 0.5f;
     }
     mixer.setTargets(gains, solos, mutes, hostBypassed || bypassParam->load() > 0.5f);
+    strengthSmoothing.setTargetValue(neuralStrengthParam->load(std::memory_order_relaxed));
     const bool monoMode = modeParam->load() < 0.5f || channels == 1;
     monoBlend.setTargetValue(monoMode ? 1.0f : 0.0f);
     const int quality = juce::jlimit(0, 2, static_cast<int>(qualityParam->load()));
@@ -145,6 +167,7 @@ void SkellSeparatorAudioProcessor::processAudio(juce::AudioBuffer<float>& b, boo
         const float blend = monoBlend.getNextValue();
         separator.processSample(left, right, blend, quality, stemSamples, rawDelayed);
         alignment.process(stemSamples, rawDelayed);
+        const float neuralStrength = strengthSmoothing.getNextValue();
         if (neural.active())
         {
             const float mid = 0.5f * (left + right);
@@ -156,7 +179,19 @@ void SkellSeparatorAudioProcessor::processAudio(juce::AudioBuffer<float>& b, boo
             // Missing model data is NOT a zero-valued voice frame. Fade the
             // last applied neural correction toward classical stems without
             // introducing a voice dropout or a transient ambience spike.
-            neuralBlend.apply(stemSamples, available, neuralVoice);
+            const bool neuralSelected = engineModeParam->load(std::memory_order_relaxed) > 0.5f;
+            // Original neural isolation is intentionally user-blendable: the
+            // synthetic-trained research model can over-suppress real vocals.
+            // Preserve the exact three-stem complement in NeuralVoiceBlend.
+            if (available) {
+                for (size_t ch = 0; ch < 2; ++ch)
+                    neuralVoice[ch] = (1.0f - neuralStrength) * stemSamples[1][ch]
+                                      + neuralStrength * neuralVoice[ch];
+            }
+            neuralBlend.apply(stemSamples, available && neuralSelected, neuralVoice);
+        } else {
+            // Smoothly return to classical when a model is unavailable.
+            neuralBlend.apply(stemSamples, false, {});
         }
         ++neuralSampleIndex;
         const auto out = mixer.mix(stemSamples, rawDelayed);

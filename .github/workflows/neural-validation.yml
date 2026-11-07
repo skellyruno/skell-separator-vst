@@ -1,0 +1,44 @@
+name: Streaming Neural and Benchmark Validation
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  neural-transport:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Compile and run fixed-latency + missed-deadline tests
+        run: bash tests/run_neural_contract.sh
+      - name: Test loss-safe neural/classical stem crossfade
+        run: bash tests/run_neural_blend.sh
+      - name: Test actual trained Tiny Vocal backend and exact stereo WOLA
+        run: bash tests/run_tiny_vocal.sh
+      - name: Procedural reference-mix benchmark (diagnostic, not real vocal quality)
+        run: bash tests/run_tiny_benchmark.sh
+      - name: Sanitized Tiny Vocal inference and WOLA
+        env:
+          SKELL_SANITIZE: "1"
+          SKELL_TEST_BINARY: /tmp/skell-tiny-model-asan
+        run: bash tests/run_tiny_vocal.sh
+      - name: Test actual RNNoise C API wrapper with synthetic ABI double
+        run: bash tests/run_neural_api_mock.sh
+      - name: ASan and UBSan checks
+        env:
+          SKELL_SANITIZE: "1"
+          SKELL_TEST_BINARY: /tmp/skell-neural-asan
+        run: bash tests/run_neural_contract.sh
+      - name: Sanitized neural dropout crossfade
+        env:
+          SKELL_SANITIZE: "1"
+          SKELL_TEST_BINARY: /tmp/skell-neural-blend-asan
+        run: bash tests/run_neural_blend.sh
+      - name: Benchmark metric self-test
+        run: |
+          python -m pip install numpy soundfile
+          python tests/benchmark_vocals.py --self-test
+          python tests/offline_tiny_render_smoke.py
+      - name: Classical CPU baseline (diagnostic, not a pass/fail threshold)
+        run: bash tests/run_cpu_profile.sh 48000 256 8

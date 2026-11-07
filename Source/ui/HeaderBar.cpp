@@ -41,8 +41,8 @@ void HeaderBar::paint(juce::Graphics& g)
     g.setFont(Theme::mono(11.0f));
     g.drawRoundedRectangle(209, 73, 25, 17, 2.6f, 1.2f);
     const bool neural = processor.isNeuralRunning();
-    g.drawText(neural ? "NN" : "DSP", 209, 72, 26, 18, juce::Justification::centred, false);
-    g.drawText(neural ? "RNNOISE / SPEECH DENOISE" : "ON-DEVICE / CLASSICAL",
+    g.drawText(neural ? "AI" : "DSP", 209, 72, 26, 18, juce::Justification::centred, false);
+    g.drawText(neural ? "EXPERIMENTAL NEURAL MASK" : "ON-DEVICE / CLASSICAL",
                243, 72, 185, 19, juce::Justification::centredLeft, false);
     g.setColour(Theme::textDim.withAlpha(0.55f));
     g.drawLine(432.0f, 42.0f, 432.0f, 92.0f, 1.2f);

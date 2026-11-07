@@ -1,3 +1,18 @@
+## 1.9.0 — Real neural mask inference prototype (synthetic-trained, non-commercial-quality)
+
+- Implemented an original tiny trained 64-band spectral mask MLP and a 48 kHz,
+  960-window / 480-hop stereo WOLA inference backend on the existing asynchronous
+  worker, with no OS locks or inference in the audio callback.
+- Added Neural Experimental engine mode (default Classical) plus a 65% default
+  neural strength to make auditioning safer. Saved project automation IDs and
+  preset numbers are preserved. Existing projects get the classical default.
+- A full model-on build reports a stable 2880 sample delay; allpass WOLA
+  alignment error below 3e-7 in the isolated C++ test. Worker late frames
+  still fall back to classical stems without variable host latency.
+- Added repeatable original synthetic weight training, held-out synthetic
+  benchmark and model CPU timing to neural CI. No real singing recorded or
+  benchmarked, no third-party weights included; Windows JUCE/FL host unverified.
+
 ## 1.8.0 — Frame-valid neural inference, robust model recovery and input guards
 
 - Reject whole corrupted or partially written neural output frames on the worker; never substitute silent model values for invalid frames.
