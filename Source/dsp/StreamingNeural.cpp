@@ -138,9 +138,21 @@ void StreamingNeural::threadMain() noexcept {
     }
 }
 
-void StreamingNeural::submitSample(float left, float right, std::int64_t sampleIndex) noexcept {
-    if (!active()) return;
-    if (fill == 0) collecting.startSample = sampleIndex;
+void StreamingNeural::submitSample(float left, float right, std::int64_t sampleIndex,
+                                   bool selected) noexcept {
+    if (!active() || !selected) { fill = 0; return; }
+    // The worker and output cache index 480-sample frames from sample zero.
+    // Starting a new frame on an arbitrary engine-toggle sample would make
+    // the cached result unreachable and could send the wrong audio to the host.
+    if (fill == 0) {
+        if (sampleIndex < 0 || sampleIndex % neuralFrameSize != 0) return;
+        collecting.startSample = sampleIndex;
+    } else if (sampleIndex != collecting.startSample + fill) {
+        // Host discontinuity or non-contiguous submission: re-prime at the
+        // next original frame boundary instead of publishing a mixed frame.
+        fill = 0;
+        return;
+    }
     const auto index = static_cast<std::size_t>(fill);
     collecting.audio[0][index] = std::isfinite(left) ? left : 0.0f;
     collecting.audio[1][index] = std::isfinite(right) ? right : 0.0f;

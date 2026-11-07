@@ -42,7 +42,10 @@ public:
 
     bool start(std::unique_ptr<NeuralFrameBackend>);
     void stop() noexcept;
-    void submitSample(float left, float right, std::int64_t sampleIndex) noexcept;
+    // Submit only while neural is selected. A disabled period discards any
+    // partial input frame so a later restart cannot mislabel its timestamp.
+    void submitSample(float left, float right, std::int64_t sampleIndex,
+                      bool selected = true) noexcept;
     // Request the output corresponding to this original input sample index.
     // A late result must never shift the input/output timeline.
     bool readSample(std::int64_t originalSample, std::array<float, 2>& out) noexcept;

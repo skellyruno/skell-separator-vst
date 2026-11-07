@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.22)
-project(SkellSeparator VERSION 1.9.0 LANGUAGES C CXX)
+project(SkellSeparator VERSION 1.10.0 LANGUAGES C CXX)
 
 # Uses the same JUCE FetchContent/Windows runner arrangement as the known-good
 # StopDial starter. Optional -DJUCE_PATH=... supports offline/local builds.

@@ -100,6 +100,55 @@ static void testIncompleteOutputRejected()
     std::cout << "incomplete neural output rejected: PASS\n";
 }
 
+// The default Classical engine (and Bypass) must not waste worker CPU.
+// Re-enabling mid-frame must only publish 480-sample aligned frames, with
+// the model's one-frame look-behind reset when timestamps jump.
+struct FrameStartAuditModel : skell::NeuralFrameBackend {
+    std::shared_ptr<std::atomic<int>> count, unaligned, resets;
+    FrameStartAuditModel(std::shared_ptr<std::atomic<int>> c,
+                         std::shared_ptr<std::atomic<int>> u,
+                         std::shared_ptr<std::atomic<int>> r)
+        : count(std::move(c)), unaligned(std::move(u)), resets(std::move(r)) {}
+    bool valid() const noexcept override { return true; }
+    void reset() noexcept override { resets->fetch_add(1, std::memory_order_relaxed); }
+    void process(const skell::NeuralFrame& input, skell::NeuralFrame& output) noexcept override {
+        if (input.startSample < 0 || input.startSample % skell::neuralFrameSize != 0)
+            unaligned->fetch_add(1, std::memory_order_relaxed);
+        count->fetch_add(1, std::memory_order_relaxed);
+        output.audio = input.audio;
+    }
+};
+
+static void testDormantWorkerAndFrameAlignedResume()
+{
+    auto count = std::make_shared<std::atomic<int>>(0);
+    auto unaligned = std::make_shared<std::atomic<int>>(0);
+    auto resets = std::make_shared<std::atomic<int>>(0);
+    skell::StreamingNeural stream;
+    assert(stream.start(std::make_unique<FrameStartAuditModel>(count, unaligned, resets)));
+    int sample = 0;
+    auto feed = [&](int samples, bool selected) {
+        for (int k = 0; k < samples; ++k, ++sample) {
+            stream.submitSample(0.11f, -0.05f, sample, selected);
+            if ((k % 96) == 0) std::this_thread::sleep_for(std::chrono::microseconds(500));
+        }
+    };
+    feed(8 * skell::neuralFrameSize + 173, false);
+    assert(count->load() == 0);
+    feed(15 * skell::neuralFrameSize + 191, true);
+    const auto beforePause = count->load();
+    assert(beforePause >= 8);
+    feed(10 * skell::neuralFrameSize + 113, false);
+    std::this_thread::sleep_for(std::chrono::milliseconds(12));
+    const auto atPause = count->load();
+    feed(12 * skell::neuralFrameSize + 77, true);
+    assert(count->load() > atPause + 5);
+    assert(unaligned->load() == 0);
+    assert(resets->load() >= 2); // initial frame and gap after resuming
+    stream.stop();
+    std::cout << "neural idle/Bypass suppression + mid-frame resume: PASS\n";
+}
+
 static void testAlignedClassicalPath()
 {
     static_assert(LatencyAlignedStems::skellLatency() == 2880,
@@ -175,6 +224,7 @@ static void testAsynchronousNeural()
 
 int main() {
     testAlignedClassicalPath();
+    testDormantWorkerAndFrameAlignedResume();
     testAsynchronousNeural();
     testWholeFrameCorruptionPolicy();
     testIncompleteOutputRejected();

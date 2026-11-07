@@ -1,3 +1,27 @@
+# v1.10 — Compact UI and dormant neural worker (November 2026)
+
+- Three subtly raised stem panels with consistent edge lighting, clear
+  estimated-stem labels, and a Solo outline when isolated. Keeps the existing
+  resizable **785×448 default editor**, host parameter IDs, and 0 dB defaults.
+- A real **DSP / AI** selector in the header: one click switches the existing
+  automatable engineMode parameter. At unsupported sample rates it indicates
+  that the neural model is unavailable. No invented neural-quality claims.
+- Fixed idle CPU waste: the optional neural worker now receives **no frames**
+  in Classical mode or during Bypass, even when compiled and initialized.
+  Switching back to AI starts at the next aligned 480-sample frame boundary;
+  the worker re-primes its look-behind after a gap. It never performs inference
+  on the audio thread and does not change output or host latency.
+- Added an asynchronous pause/resume regression test and sanitizers. End-to-end
+  singing-vocal isolation is still **unvalidated**; the shipped trained model
+  remains a small synthetic-trained experiment and the reverb stem is classical.
+- Existing saved sessions keep their selection/gain values. A neutral 0 dB
+  mix still reconstructs the delayed input; neural-enabled builds retain the
+  same 2,880-sample latency contract (60 ms at 48 kHz).
+
+[Implementation and verification notes](docs/V1_10_ENGINE_AND_UI.md).
+
+---
+
 # v1.9 — Experimental trained neural singing-mask foundation (November 2026)
 
 **This ZIP now contains an ORIGINAL, TRAINED neural spectral-mask model and a
@@ -105,8 +129,8 @@ Reverb remains a classical estimate. See
 ## Build (Windows / GitHub Actions)
 
 1. Upload the contents of this ZIP to a GitHub repository named `skell-separator-vst`.
-2. Open **Actions → Build Skell Separator → Run workflow**. Pushing to `main` will also build automatically.
-3. Download **SkellSeparator-Windows** from the successful workflow's Artifacts. It contains `Skell Separator.vst3` and the standalone `.exe`.
+2. Open **Actions → Build Windows VST3 → Run workflow**. Pushing to `main` also builds automatically.
+3. Download **SkellPlugin-Windows-VST3** from the successful workflow's Artifacts. The current workflow packages the VST3 bundle; the Standalone target also compiles but is not included in this artifact.
 4. Install the VST3 bundle into `C:\Program Files\Common Files\VST3\` and rescan in FL Studio. Test with a new project first.
 
 The exact CMake build locally is:

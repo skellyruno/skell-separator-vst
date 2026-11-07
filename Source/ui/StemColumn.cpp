@@ -23,9 +23,31 @@ void StemColumn::paint(juce::Graphics& g)
 {
     g.addTransform(juce::AffineTransform::scale(getWidth() / Theme::columnW,
                                                  getHeight() / Theme::columnH));
-    g.setColour(Theme::text);
-    g.setFont(Theme::mono(24.0f));
-    g.drawText(heading, 8, 3, 292, 46, juce::Justification::centred, false);
+    const auto panel = juce::Rectangle<float>(7.5f, 1.0f, 295.0f, 469.0f);
+    juce::ColourGradient surface(juce::Colour(0xff202025), 140.0f, 0.0f,
+                                 juce::Colour(0xff16171b), 140.0f, 467.0f, false);
+    g.setGradientFill(surface);
+    g.fillRoundedRectangle(panel, 11.0f);
+    g.setColour(juce::Colours::white.withAlpha(0.067f));
+    g.drawRoundedRectangle(panel.reduced(0.5f), 10.5f, 1.0f);
+    if (panelSolo && panelAudible && !panelBypassed)
+    {
+        g.setColour(Theme::accent.withAlpha(0.47f));
+        g.drawRoundedRectangle(panel.reduced(1.5f), 10.0f, 1.5f);
+    }
+    g.setColour(panelActive && panelAudible && !panelBypassed
+                ? Theme::text : Theme::text.withAlpha(0.79f));
+    g.setFont(Theme::mono(23.0f));
+    g.drawText(heading, 10, 3, 280, 45, juce::Justification::centred, false);
+    g.setColour(juce::Colours::white.withAlpha(0.047f));
+    g.drawLine(24.0f, 54.5f, 254.0f, 54.5f, 1.0f);
+    const auto detail = panelBypassed ? "LATENCY-ALIGNED BYPASS"
+                        : !panelAudible ? "NOT IN OUTPUT MIX"
+                        : stem == 0 ? "AMBIENCE / RESIDUAL"
+                        : stem == 1 ? "VOICE / ESTIMATE" : "REVERB / ESTIMATE";
+    g.setColour((panelActive && panelAudible ? Theme::textDim : Theme::textDim.withAlpha(0.66f)));
+    g.setFont(Theme::mono(12.4f));
+    g.drawText(detail, 24, 453, 262, 16, juce::Justification::centred, false);
 }
 
 void StemColumn::resized()
@@ -49,6 +71,15 @@ void StemColumn::refresh(bool active, bool bypassed)
                       || processor.apvts.getRawParameterValue("voiceSolo")->load() > 0.5f
                       || processor.apvts.getRawParameterValue("reverbSolo")->load() > 0.5f;
     const bool audible = !mute.getToggleState() && (!anySolo || solo.getToggleState());
+    const bool soloed = solo.getToggleState();
+    if (panelAudible != audible || panelActive != active || panelSolo != soloed || panelBypassed != bypassed)
+    {
+        panelAudible = audible;
+        panelActive = active;
+        panelSolo = soloed;
+        panelBypassed = bypassed;
+        repaint();
+    }
     const float amount = static_cast<float>(gain.getValue());
     const float gainMultiplier = amount <= -39.95f ? 0.0f
                                 : juce::Decibels::decibelsToGain(amount);

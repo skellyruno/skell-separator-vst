@@ -18,6 +18,7 @@ public:
 private:
     SkellSeparatorAudioProcessor& processor;
     int stem;
+    bool panelAudible = true, panelActive = false, panelSolo = false, panelBypassed = false;
     juce::String heading;
     TickKnob gain;
     RoundIconButton solo { RoundIconButton::Kind::solo };

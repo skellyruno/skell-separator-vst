@@ -117,7 +117,7 @@ void SkellSeparatorAudioProcessorEditor::applyScale(int percent)
 void SkellSeparatorAudioProcessorEditor::showMenu()
 {
     juce::PopupMenu popup;
-    popup.addSectionHeader("SKELL SEPARATOR  /  1.9");
+    popup.addSectionHeader("SKELL SEPARATOR  /  1.10");
     popup.addItem(1, "Reset All");
     popup.addItem(2, "Copy Settings to Clipboard");
     popup.addItem(3, "Input Mono Sum", true,
@@ -131,7 +131,7 @@ void SkellSeparatorAudioProcessorEditor::showMenu()
     popup.addSubMenu("Separation Quality", quality);
     juce::PopupMenu engines;
     const bool experimental = processor.apvts.getRawParameterValue("engineMode")->load() > 0.5f;
-    engines.addItem(60, "Classical (stable)", true, !experimental);
+    engines.addItem(60, "Classical (worker idle)", true, !experimental);
     engines.addItem(61, "Neural (experimental, 48 kHz only)", processor.hasNeuralBackend(), experimental);
     popup.addSubMenu("Processing Engine", engines);
     juce::PopupMenu strengthMenu;
@@ -218,7 +218,7 @@ void SkellSeparatorAudioProcessorEditor::showMenu()
                         << "Dropped: " << juce::String(static_cast<juce::int64>(p.getNeuralQueueDropped())) << "\n"
                         << "Rejected: " << juce::String(static_cast<juce::int64>(p.getNeuralRejectedFrames()));
                 juce::AlertWindow::showMessageBoxAsync(juce::MessageBoxIconType::InfoIcon,
-                    "Skell Separator — Processing Engine", "Skell Separator 1.9\n\n" + details,
+                    "Skell Separator — Processing Engine", "Skell Separator 1.10\n\n" + details,
                     "OK", safe.getComponent());
             }
         });

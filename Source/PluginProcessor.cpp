@@ -145,7 +145,14 @@ void SkellSeparatorAudioProcessor::processAudio(juce::AudioBuffer<float>& b, boo
         solos[ix] = soloParams[ix]->load(std::memory_order_relaxed) > 0.5f;
         mutes[ix] = muteParams[ix]->load(std::memory_order_relaxed) > 0.5f;
     }
-    mixer.setTargets(gains, solos, mutes, hostBypassed || bypassParam->load() > 0.5f);
+    const bool bypassRequested = hostBypassed || bypassParam->load() > 0.5f;
+    mixer.setTargets(gains, solos, mutes, bypassRequested);
+    // Read automation once per callback, just like gain/Solo/Mute. When in
+    // Classical or Bypass modes, the neural worker must not compute unused
+    // masks; it will restart at a clean frame boundary after reactivation.
+    const bool neuralEnabled = neural.active();
+    const bool neuralSelected = neuralEnabled && !bypassRequested
+                             && engineModeParam->load(std::memory_order_relaxed) > 0.5f;
     strengthSmoothing.setTargetValue(neuralStrengthParam->load(std::memory_order_relaxed));
     const bool monoMode = modeParam->load() < 0.5f || channels == 1;
     monoBlend.setTargetValue(monoMode ? 1.0f : 0.0f);
@@ -168,18 +175,17 @@ void SkellSeparatorAudioProcessor::processAudio(juce::AudioBuffer<float>& b, boo
         separator.processSample(left, right, blend, quality, stemSamples, rawDelayed);
         alignment.process(stemSamples, rawDelayed);
         const float neuralStrength = strengthSmoothing.getNextValue();
-        if (neural.active())
+        if (neuralEnabled)
         {
             const float mid = 0.5f * (left + right);
             neural.submitSample(left + blend * (mid - left),
-                                right + blend * (mid - right), neuralSampleIndex);
+                                right + blend * (mid - right), neuralSampleIndex,
+                                neuralSelected);
             std::array<float, 2> neuralVoice {};
-            const bool available = neural.readSample(
+            const bool available = neuralSelected && neural.readSample(
                 neuralSampleIndex - LatencyAlignedStems::skellLatency(), neuralVoice);
-            // Missing model data is NOT a zero-valued voice frame. Fade the
-            // last applied neural correction toward classical stems without
-            // introducing a voice dropout or a transient ambience spike.
-            const bool neuralSelected = engineModeParam->load(std::memory_order_relaxed) > 0.5f;
+            // A missing or late frame crossfades to the aligned classical
+            // stem; selection changes never alter reported host latency.
             // Original neural isolation is intentionally user-blendable: the
             // synthetic-trained research model can over-suppress real vocals.
             // Preserve the exact three-stem complement in NeuralVoiceBlend.

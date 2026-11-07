@@ -1,3 +1,13 @@
+## 1.10.0 — Engine-select UI and CPU-safe neural pausing
+
+- Polished all three stem panels with clearer status and Solo/Mute affordances.
+- Promoted DSP/AI model switch to the header, bound to existing engineMode ID.
+- Suppress neural input and inference while using Classical or Bypass.
+- Align resumed neural frames to original 480-sample boundaries after switching.
+- Added a test-only counting backend for dormant state and mid-frame resumes.
+- Preserve 0 dB defaults, 785×448 editor, existing automation and 2880-sample
+  fixed neural latency; do not claim real-singing quality improvement.
+
 ## 1.9.0 — Real neural mask inference prototype (synthetic-trained, non-commercial-quality)
 
 - Implemented an original tiny trained 64-band spectral mask MLP and a 48 kHz,

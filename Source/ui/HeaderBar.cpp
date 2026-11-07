@@ -1,10 +1,54 @@
 #include "HeaderBar.h"
 
+EngineBadge::EngineBadge() : juce::Button("Processing engine")
+{
+    setMouseCursor(juce::MouseCursor::PointingHandCursor);
+    setTooltip("Switch DSP / experimental neural. Neural requires a 48 kHz host sample rate.");
+}
+
+void EngineBadge::updateState(bool selected, bool available, bool bypassed)
+{
+    if (selected != neuralSelected || available != modelAvailable || bypassed != isBypassed)
+    {
+        neuralSelected = selected;
+        modelAvailable = available;
+        isBypassed = bypassed;
+        repaint();
+    }
+}
+
+void EngineBadge::paintButton(juce::Graphics& g, bool hover, bool down)
+{
+    g.addTransform(juce::AffineTransform::scale(getWidth() / 218.0f, getHeight() / 26.0f));
+    const bool lit = neuralSelected && modelAvailable && !isBypassed;
+    const auto surface = juce::Rectangle<float>(1, 1, 216, 24);
+    g.setColour(juce::Colour(0xff0f1013).withAlpha(0.95f));
+    g.fillRoundedRectangle(surface.translated(0, 1), 5.0f);
+    g.setColour(juce::Colour(0xff222329).brighter(hover ? 0.12f : 0.0f)
+                .darker(down ? 0.10f : 0.0f));
+    g.fillRoundedRectangle(surface, 5.0f);
+    g.setColour(lit ? Theme::accent.withAlpha(0.63f)
+                    : juce::Colours::white.withAlpha(hover ? 0.19f : 0.10f));
+    g.drawRoundedRectangle(surface.reduced(0.5f), 4.7f, 1.0f);
+    g.setColour(lit ? Theme::accent : juce::Colour(0xff494b54));
+    g.fillRoundedRectangle(5.0f, 4.0f, 31.0f, 18.0f, 3.4f);
+    g.setColour(lit ? juce::Colours::white : Theme::text);
+    g.setFont(Theme::mono(10.5f));
+    g.drawText(neuralSelected ? "AI" : "DSP", 5, 4, 31, 18,
+               juce::Justification::centred, false);
+    g.setColour(modelAvailable ? Theme::text : Theme::textDim);
+    g.setFont(Theme::mono(11.2f));
+    const char* status = neuralSelected ? (modelAvailable ? "NEURAL / EXPERIMENTAL" : "NEURAL / UNAVAILABLE")
+                                        : (modelAvailable ? "CLASSICAL / AI READY" : "CLASSICAL / DSP ONLY");
+    g.drawText(status, 41, 2, 174, 22, juce::Justification::centredLeft, false);
+}
+
 HeaderBar::HeaderBar(SkellSeparatorAudioProcessor& p) : processor(p)
 {
     mode.setTooltip("Switch between mono sum and stereo processing");
     bypass.setTooltip("Use the unprocessed, latency-aligned input");
     addAndMakeVisible(mode);
+    addAndMakeVisible(engine);
     addAndMakeVisible(bypass);
     addAndMakeVisible(previous);
     addAndMakeVisible(next);
@@ -19,6 +63,17 @@ HeaderBar::HeaderBar(SkellSeparatorAudioProcessor& p) : processor(p)
         {
             param->beginChangeGesture();
             param->setValueNotifyingHost(param->getValue() > 0.5f ? 0.0f : 1.0f);
+            param->endChangeGesture();
+        }
+    };
+    engine.onClick = [this]
+    {
+        if (!processor.hasNeuralBackend()) return;
+        if (auto* param = processor.apvts.getParameter("engineMode"))
+        {
+            const bool selected = processor.apvts.getRawParameterValue("engineMode")->load() > 0.5f;
+            param->beginChangeGesture();
+            param->setValueNotifyingHost(param->convertTo0to1(selected ? 0.0f : 1.0f));
             param->endChangeGesture();
         }
     };
@@ -37,13 +92,6 @@ void HeaderBar::paint(juce::Graphics& g)
     g.setColour(Theme::text.withAlpha(0.86f));
     g.setFont(Theme::mono(20.0f));
     g.drawText("STEM SEPARATOR", 208, 38, 220, 31, juce::Justification::centredLeft, false);
-    g.setColour(Theme::textDim);
-    g.setFont(Theme::mono(11.0f));
-    g.drawRoundedRectangle(209, 73, 25, 17, 2.6f, 1.2f);
-    const bool neural = processor.isNeuralRunning();
-    g.drawText(neural ? "AI" : "DSP", 209, 72, 26, 18, juce::Justification::centred, false);
-    g.drawText(neural ? "EXPERIMENTAL NEURAL MASK" : "ON-DEVICE / CLASSICAL",
-               243, 72, 185, 19, juce::Justification::centredLeft, false);
     g.setColour(Theme::textDim.withAlpha(0.55f));
     g.drawLine(432.0f, 42.0f, 432.0f, 92.0f, 1.2f);
 }
@@ -58,6 +106,7 @@ void HeaderBar::resized()
                     juce::roundToInt(w * sx), juce::roundToInt(h * sy));
     };
     place(mode, 497, 36, 120, 42);
+    place(engine, 207, 71, 218, 25);
     place(bypass, 650, 36, 120, 42);
     place(previous, 815, 39, 38, 38);
     place(next, 874, 39, 38, 38);
@@ -71,6 +120,9 @@ void HeaderBar::refresh(bool active)
     const auto isStereo = processor.apvts.getRawParameterValue("channelMode")->load() > 0.5f;
     const auto isBypassed = processor.apvts.getRawParameterValue("bypass")->load() > 0.5f
                          || processor.hostBypassActive.load(std::memory_order_relaxed);
+    engine.setEnabled(processor.hasNeuralBackend());
+    engine.updateState(processor.apvts.getRawParameterValue("engineMode")->load() > 0.5f,
+                       processor.hasNeuralBackend(), isBypassed);
     mode.setCaption(isStereo ? "Stereo" : "Mono");
     mode.setAccentEnabled(isStereo && active && !isBypassed);
     bypass.setOutlineEnabled(isBypassed);
