@@ -94,6 +94,19 @@ void HeaderBar::paint(juce::Graphics& g)
     g.drawText("STEM SEPARATOR", 208, 38, 220, 31, juce::Justification::centredLeft, false);
     g.setColour(Theme::textDim.withAlpha(0.55f));
     g.drawLine(432.0f, 42.0f, 432.0f, 92.0f, 1.2f);
+    // Small sample-peak warning for boosted stem gains. It is not a limiter
+    // or a true-peak measurement: no unexpected audio gain changes occur.
+    const auto indicator = juce::Rectangle<float>(920.0f, 48.0f, 47.0f, 20.0f);
+    if (overloadVisible)
+    {
+        g.setColour(Theme::accent.withAlpha(0.20f));
+        g.fillRoundedRectangle(indicator, 5.0f);
+        g.setColour(Theme::accent.withAlpha(0.87f));
+        g.drawRoundedRectangle(indicator, 5.0f, 0.8f);
+    }
+    g.setColour(overloadVisible ? Theme::text : Theme::textDim.withAlpha(0.55f));
+    g.setFont(Theme::mono(11.0f));
+    g.drawText(overloadVisible ? "OVER" : "PEAK", indicator, juce::Justification::centred, false);
 }
 
 void HeaderBar::resized()
@@ -115,6 +128,12 @@ void HeaderBar::resized()
 
 void HeaderBar::refresh(bool active)
 {
+    const auto over = processor.overZeroBlocks.load(std::memory_order_relaxed);
+    if (over > lastOverZeroBlocks) overloadHold = 45;
+    else if (overloadHold > 0) --overloadHold;
+    lastOverZeroBlocks = over;
+    const bool visible = overloadHold > 0;
+    if (overloadVisible != visible) { overloadVisible = visible; repaint(); }
     const bool modelActive = processor.isNeuralRunning();
     if (modelActive != lastModelActive) { lastModelActive = modelActive; repaint(); }
     const auto isStereo = processor.apvts.getRawParameterValue("channelMode")->load() > 0.5f;

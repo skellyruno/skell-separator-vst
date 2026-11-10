@@ -62,6 +62,7 @@ void SkellSeparatorAudioProcessor::prepareToPlay(double sampleRate, int)
 {
     spectra.reset();
     inputActivity.store(0.0f, std::memory_order_relaxed);
+    overZeroBlocks.store(0, std::memory_order_relaxed);
     hostBypassActive.store(false, std::memory_order_relaxed);
     separator.prepare(sampleRate);
     alignment.reset();
@@ -160,6 +161,7 @@ void SkellSeparatorAudioProcessor::processAudio(juce::AudioBuffer<float>& b, boo
     auto* l = b.getWritePointer(0);
     auto* r = channels == 2 ? b.getWritePointer(1) : nullptr;
     float peak = 0.0f;
+    bool overZero = false;
     Separator::Stems stemSamples {};
     std::array<float, 2> rawDelayed {};
     for (int i = 0; i < n; ++i)
@@ -209,8 +211,12 @@ void SkellSeparatorAudioProcessor::processAudio(juce::AudioBuffer<float>& b, boo
         const auto out = mixer.mix(stemSamples, rawDelayed);
         l[i] = out[0];
         if (r != nullptr) r[i] = out[1];
+        // DAW floating-point buses can exceed 0 dBFS without numerical
+        // clipping. Show the user; do not insert an unrequested limiter.
+        overZero |= std::abs(out[0]) > 1.0f || (r != nullptr && std::abs(out[1]) > 1.0f);
     }
     for (int ch = 2; ch < b.getNumChannels(); ++ch) b.clear(ch, 0, n);
+    if (overZero) overZeroBlocks.fetch_add(1, std::memory_order_relaxed);
     audioBlockCounter.fetch_add(1, std::memory_order_relaxed);
     inputActivity.store(0.80f * inputActivity.load(std::memory_order_relaxed)
                         + 0.20f * juce::jlimit(0.0f, 1.0f, peak * 2.0f),
@@ -250,7 +256,12 @@ void SkellSeparatorAudioProcessor::usePreset(int index)
         }
     }
     for (auto* name : { "ambienceSolo", "voiceSolo", "reverbSolo", "ambienceMute", "voiceMute", "reverbMute" })
-        if (auto* p = apvts.getParameter(name)) p->setValueNotifyingHost(0.0f);
+        if (auto* p = apvts.getParameter(name))
+        {
+            p->beginChangeGesture();
+            p->setValueNotifyingHost(0.0f);
+            p->endChangeGesture();
+        }
     presetIndex.store(index);
 }
 

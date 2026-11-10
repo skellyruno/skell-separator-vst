@@ -1,3 +1,9 @@
+# v1.12 — Compact interface and neural deadline recovery
+
+The editor keeps the **785×448 default** and its resized scale now persists in saved projects. The header's **PEAK** label turns to **OVER** when the floating-point output exceeds 0 dBFS (sample peak, not true peak); it does not clamp your mix. In neural mode, the model worker now skips frames that are already past the fixed 2,880-sample output contract, allowing the latency-aligned classical fallback to take over under overload and accelerated offline bounce. The classical and neural model quality/weights are unchanged. See `docs/V1_12_RELEASE_CHECKS.md` and `tests/ui_layout_contract.py` for verification details.
+
+---
+
 # v1.11 — Neural leakage guard, real-stem validation, and candidate training
 
 - Added a conservative, smooth neural-correction guard for the experimental TinyVocalNet path. It constrains errors relative to the validated classical estimate while preserving latency and three-stem reconstruction.

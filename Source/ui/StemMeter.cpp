@@ -8,17 +8,23 @@ StemMeter::StemMeter(SpectralAnalyzer& a, int s) : analyzer(a), stem(s)
 
 void StemMeter::refresh(bool bypassed, bool muted, float gain)
 {
-    dimmed = bypassed || muted;
+    const bool newDimmed = bypassed || muted;
+    bool dirty = newDimmed != dimmed;
+    dimmed = newDimmed;
     for (int i = 0; i < SpectralAnalyzer::bands; ++i)
     {
         const float raw = dimmed ? 0.0f : analyzer.getBand(stem, i) * gain;
         const float target = juce::jlimit(0.0f, 1.0f,
                            std::log1p(raw * 0.13f) / std::log1p(2.0f));
         const size_t idx = static_cast<size_t>(i);
-        smoothed[idx] += (target > smoothed[idx] ? 0.82f : 0.12f)
-                       * (target - smoothed[idx]);
+        const float previous = smoothed[idx];
+        smoothed[idx] += (target > previous ? 0.82f : 0.12f)
+                       * (target - previous);
+        // Static/idle spectrum lines should not force 45 full repaints/sec.
+        // Keep repainting through a real fade, then rest once settled.
+        dirty |= std::abs(smoothed[idx] - previous) > 0.0008f;
     }
-    repaint();
+    if (dirty) repaint();
 }
 
 void StemMeter::paint(juce::Graphics& g)

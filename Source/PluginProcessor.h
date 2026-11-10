@@ -39,6 +39,9 @@ public:
     std::atomic<float> inputActivity { 0.0f };
     std::atomic<bool> hostBypassActive { false };
     std::atomic<juce::uint32> audioBlockCounter { 0 };
+    // Counts callback blocks with floating-point output above 0 dBFS.
+    // Diagnostic only: never silently clamp user-selected boosted gains.
+    std::atomic<std::uint64_t> overZeroBlocks { 0 };
     static juce::AudioProcessorValueTreeState::ParameterLayout makeLayout();
     void resetAllParameters();
     bool isNeuralRunning() const noexcept {
@@ -58,6 +61,7 @@ public:
     std::uint64_t getNeuralMissedFrames() const noexcept { return neural.missedDeadlines(); }
     std::uint64_t getNeuralQueueDropped() const noexcept { return neural.droppedFrames(); }
     std::uint64_t getNeuralRejectedFrames() const noexcept { return neural.rejectedFrames(); }
+    std::uint64_t getNeuralStaleFrames() const noexcept { return neural.staleFrames(); }
     double getNeuralWorkerMeanUs() const noexcept { return neural.meanWorkerFrameUs(); }
     std::uint64_t getNeuralWorkerMaxUs() const noexcept { return neural.maxWorkerFrameUs(); }
     void usePreset(int index);

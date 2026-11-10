@@ -58,6 +58,9 @@ void SkellSeparatorAudioProcessorEditor::paint(juce::Graphics& g)
 
 void SkellSeparatorAudioProcessorEditor::resized()
 {
+    // Persist manual host/editor resizing, not just Scale menu selections.
+    // The constrainer keeps our fixed aspect ratio; persist the effective width.
+    processor.setUiScale(juce::roundToInt(100.0f * getWidth() / Theme::designW));
     const float sx = getWidth() / Theme::designW;
     const float sy = getHeight() / Theme::designH;
     auto place = [sx, sy](juce::Component& component, float x, float y, float w, float h)
@@ -117,7 +120,7 @@ void SkellSeparatorAudioProcessorEditor::applyScale(int percent)
 void SkellSeparatorAudioProcessorEditor::showMenu()
 {
     juce::PopupMenu popup;
-    popup.addSectionHeader("SKELL SEPARATOR  /  1.11");
+    popup.addSectionHeader("SKELL SEPARATOR  /  1.12");
     popup.addItem(1, "Reset All");
     popup.addItem(2, "Copy Settings to Clipboard");
     popup.addItem(3, "Input Mono Sum", true,
@@ -216,9 +219,11 @@ void SkellSeparatorAudioProcessorEditor::showMenu()
                         << "Worker maximum: " << juce::String(static_cast<juce::int64>(p.getNeuralWorkerMaxUs())) << " us/frame\n"
                         << "Missed: " << juce::String(static_cast<juce::int64>(p.getNeuralMissedFrames())) << "\n"
                         << "Dropped: " << juce::String(static_cast<juce::int64>(p.getNeuralQueueDropped())) << "\n"
-                        << "Rejected: " << juce::String(static_cast<juce::int64>(p.getNeuralRejectedFrames()));
+                        << "Rejected: " << juce::String(static_cast<juce::int64>(p.getNeuralRejectedFrames())) << "\n"
+                        << "Stale frames skipped: " << juce::String(static_cast<juce::int64>(p.getNeuralStaleFrames())) << "\n"
+                        << "Over 0 dBFS blocks: " << juce::String(static_cast<juce::int64>(p.overZeroBlocks.load()));
                 juce::AlertWindow::showMessageBoxAsync(juce::MessageBoxIconType::InfoIcon,
-                    "Skell Separator — Processing Engine", "Skell Separator 1.11\n\n" + details,
+                    "Skell Separator — Processing Engine", "Skell Separator 1.12\n\n" + details,
                     "OK", safe.getComponent());
             }
         });

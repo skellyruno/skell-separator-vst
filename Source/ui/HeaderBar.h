@@ -35,4 +35,7 @@ private:
     RoundIconButton menu { RoundIconButton::Kind::menu };
     std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> bypassAttachment;
     bool lastModelActive = false;
+    bool overloadVisible = false;
+    int overloadHold = 0; // 45 editor ticks ~ one second
+    std::uint64_t lastOverZeroBlocks = 0;
 };

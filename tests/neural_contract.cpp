@@ -149,6 +149,36 @@ static void testDormantWorkerAndFrameAlignedResume()
     std::cout << "neural idle/Bypass suppression + mid-frame resume: PASS\n";
 }
 
+// A deliberately slow backend must not force the worker to spend seconds on
+// already expired frames during an accelerated offline bounce or scheduling
+// stall. The host output remains the aligned classical fallback.
+struct SlowWorkerModel final : skell::NeuralFrameBackend {
+    bool valid() const noexcept override { return true; }
+    void reset() noexcept override {}
+    void process(const skell::NeuralFrame& in, skell::NeuralFrame& out) noexcept override {
+        std::this_thread::sleep_for(std::chrono::milliseconds(2));
+        out.audio = in.audio;
+    }
+};
+
+static void testExpiredFramesSkipped()
+{
+    skell::StreamingNeural stream;
+    assert(stream.start(std::make_unique<SlowWorkerModel>()));
+    // Audio callback runs much faster than real time. The worker cannot keep
+    // up, but it must not continue computing expired past audio indefinitely.
+    for (int i = 0; i < 70 * skell::neuralFrameSize; ++i) {
+        stream.submitSample(0.12f, -0.12f, i);
+        std::array<float, 2> out {};
+        (void) stream.readSample(i - skell::neuralContractLatency, out);
+    }
+    std::this_thread::sleep_for(std::chrono::milliseconds(25));
+    assert(stream.staleFrames() > 0);
+    assert(stream.droppedFrames() > 0 || stream.missedDeadlines() > 0);
+    stream.stop();
+    std::cout << "expired neural frame pruning: PASS\n";
+}
+
 static void testAlignedClassicalPath()
 {
     static_assert(LatencyAlignedStems::skellLatency() == 2880,
@@ -223,6 +253,7 @@ static void testAsynchronousNeural()
 }
 
 int main() {
+    testExpiredFramesSkipped();
     testAlignedClassicalPath();
     testDormantWorkerAndFrameAlignedResume();
     testAsynchronousNeural();

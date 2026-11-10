@@ -54,6 +54,7 @@ public:
     std::uint64_t missedDeadlines() const noexcept { return missed.load(std::memory_order_relaxed); }
     std::uint64_t completedFrames() const noexcept { return completed.load(std::memory_order_relaxed); }
     std::uint64_t rejectedFrames() const noexcept { return rejected.load(std::memory_order_relaxed); }
+    std::uint64_t staleFrames() const noexcept { return stale.load(std::memory_order_relaxed); }
     double meanWorkerFrameUs() const noexcept {
         const auto n = workerFrames.load(std::memory_order_relaxed);
         return n ? static_cast<double>(workerTimeUs.load(std::memory_order_relaxed)) / n : 0.0;
@@ -90,7 +91,8 @@ private:
     std::unique_ptr<NeuralFrameBackend> backend;
     std::thread worker;
     std::atomic<bool> running { false }, enabled { false };
-    std::atomic<std::uint64_t> dropped { 0 }, missed { 0 }, completed { 0 }, rejected { 0 };
+    std::atomic<std::uint64_t> dropped { 0 }, missed { 0 }, completed { 0 }, rejected { 0 }, stale { 0 };
+    std::atomic<std::int64_t> latestPublishedStart { -1 };
     std::atomic<std::uint64_t> workerFrames { 0 }, workerTimeUs { 0 }, workerMaxUs { 0 };
     int fill = 0;
     std::int64_t selectedFrame = -1;

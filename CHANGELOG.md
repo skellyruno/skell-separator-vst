@@ -1,3 +1,12 @@
+## v1.12 (2026-11-10) — Real-time safety and compact UI reliability
+
+- Stop wasting neural inference CPU on frames that cannot reach the fixed-latency output deadline in accelerated offline rendering or model overload. Expired model frames are skipped and the **aligned classical fallback** remains in charge; no waiting, locks or model processing on the audio callback. New mock stalled-worker regression tests.
+- Unify the 2,880-sample neural latency constant between transport and classical/bypass alignment, with compile-time protection against shorter-than-classical contracts.
+- Preserve resize changes in the host session state. Move Solo/Mute pucks completely inside their visual panels at the 785×448 default editor size. Gate idle spectrum-meter redraws to avoid unnecessary UI CPU use.
+- Add a compact post-mix **OVER** indicator for sample values above 0 dBFS, without clipping or limiting the floating-point audio. This is not an inter-sample true-peak meter.
+- Add static geometry/default/resize checks for 75%, 100% and 150% editor sizes. Check actual Windows JUCE compilation separately; this test cannot substitute for rendered UI/FL Studio testing.
+- Keep user parameter IDs, 0 dB defaults, 48 kHz neural model requirement, 2,880-sample latency and the same synthetic-trained model weights. **No demonstrated real-singing improvement**; Voice Reverb remains a heuristic estimate.
+
 ## v1.11 (2026-11-07)
 
 - Constrained synthetic-model neural corrections after reference-based speech/music leakage tests showed large v1.10 regressions.

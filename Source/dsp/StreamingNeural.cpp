@@ -68,6 +68,8 @@ bool StreamingNeural::start(std::unique_ptr<NeuralFrameBackend> newBackend) {
     missed.store(0, std::memory_order_relaxed);
     completed.store(0, std::memory_order_relaxed);
     rejected.store(0, std::memory_order_relaxed);
+    stale.store(0, std::memory_order_relaxed);
+    latestPublishedStart.store(-1, std::memory_order_relaxed);
     workerFrames.store(0, std::memory_order_relaxed);
     workerTimeUs.store(0, std::memory_order_relaxed);
     workerMaxUs.store(0, std::memory_order_relaxed);
@@ -92,6 +94,16 @@ void StreamingNeural::threadMain() noexcept {
     while (running.load(std::memory_order_acquire)) {
         if (!incoming.pop(frame)) {
             std::this_thread::sleep_for(std::chrono::microseconds(500));
+            continue;
+        }
+        // If a large host block/offline bounce outruns inference, expired
+        // frames have already missed their fixed output deadline. Never
+        // waste inference CPU catching up on samples the host has played.
+        // Dropped frames naturally use the aligned classical fallback.
+        const auto latest = latestPublishedStart.load(std::memory_order_acquire);
+        if (latest - frame.startSample >= neuralContractLatency - neuralFrameSize) {
+            stale.fetch_add(1, std::memory_order_relaxed);
+            previousStart = -1; // do not let recurrent history span the gap
             continue;
         }
         if (previousStart < 0 || frame.startSample != previousStart + neuralFrameSize) {
@@ -157,6 +169,7 @@ void StreamingNeural::submitSample(float left, float right, std::int64_t sampleI
     collecting.audio[0][index] = std::isfinite(left) ? left : 0.0f;
     collecting.audio[1][index] = std::isfinite(right) ? right : 0.0f;
     if (++fill == neuralFrameSize) {
+        latestPublishedStart.store(collecting.startSample, std::memory_order_release);
         if (!incoming.push(collecting)) dropped.fetch_add(1, std::memory_order_relaxed);
         fill = 0;
     }

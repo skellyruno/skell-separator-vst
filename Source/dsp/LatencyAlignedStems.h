@@ -1,5 +1,6 @@
 #pragma once
 #include "Separator.h"
+#include "StreamingNeural.h"
 #include <array>
 #include <cstdint>
 
@@ -9,14 +10,15 @@
 class LatencyAlignedStems {
 public:
 #if (defined(SKELL_WITH_RNNOISE) && SKELL_WITH_RNNOISE) || (defined(SKELL_WITH_TINY_VOCAL) && SKELL_WITH_TINY_VOCAL)
-    static constexpr int extraDelay = 2880 - Separator::latency;
+    static constexpr int extraDelay = skell::neuralContractLatency - Separator::latency;
 #else
     static constexpr int extraDelay = 0;
 #endif
+    static_assert(extraDelay >= 0, "Neural model latency must not precede classical STFT latency");
     static constexpr int capacity = 4096;
     static constexpr int skellLatency() noexcept {
 #if (defined(SKELL_WITH_RNNOISE) && SKELL_WITH_RNNOISE) || (defined(SKELL_WITH_TINY_VOCAL) && SKELL_WITH_TINY_VOCAL)
-        return 2880;
+        return skell::neuralContractLatency;
 #else
         return Separator::latency;
 #endif

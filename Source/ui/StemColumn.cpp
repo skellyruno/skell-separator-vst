@@ -60,8 +60,9 @@ void StemColumn::resized()
                     juce::roundToInt(w * sx), juce::roundToInt(h * sy));
     };
     place(gain, 25, 69, 260, 331);
-    place(solo, 266, 42, 38, 38);
-    place(mute, 266, 87, 38, 38);
+    // Keep button outlines inside the panel at minimum editor size.
+    place(solo, 259, 42, 38, 38);
+    place(mute, 259, 87, 38, 38);
     place(meter, 71, 410, 168, 40);
 }
 
