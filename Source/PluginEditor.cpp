@@ -105,7 +105,7 @@ void SkellSeparatorAudioProcessorEditor::chooseQuality(int index)
     if (auto* q = processor.apvts.getParameter("quality"))
     {
         q->beginChangeGesture();
-        q->setValueNotifyingHost(q->convertTo0to1(index));
+        q->setValueNotifyingHost(q->convertTo0to1(static_cast<float>(index)));
         q->endChangeGesture();
     }
 }
