@@ -19,6 +19,7 @@ SkellSeparatorAudioProcessorEditor::SkellSeparatorAudioProcessorEditor(SkellSepa
     setSize(juce::roundToInt(Theme::designW * p.getUiScale() / 100.0f),
             juce::roundToInt(Theme::designH * p.getUiScale() / 100.0f));
     startTimerHz(45);
+    showGuidedTour(true);
 }
 
 SkellSeparatorAudioProcessorEditor::~SkellSeparatorAudioProcessorEditor()
@@ -27,6 +28,26 @@ SkellSeparatorAudioProcessorEditor::~SkellSeparatorAudioProcessorEditor()
     header.onMenu = {};
     setLookAndFeel(nullptr);
     setConstrainer(nullptr);
+}
+
+void SkellSeparatorAudioProcessorEditor::showGuidedTour(bool firstRun)
+{
+    std::vector<skellcore::ui::GuidedTourStep> steps;
+    steps.emplace_back(&header,"CHOOSE YOUR ENGINE",
+        "Use the menu to select classical processing or experimental neural mode when available.");
+    steps.emplace_back(&voice,"VOCAL STEM",
+        "Use Voice to monitor and blend the extracted vocal in your mix.");
+    steps.emplace_back(&ambience,"AMBIENCE STEM",
+        "Use Ambience to isolate the music and surrounding sound.");
+    steps.emplace_back(&reverb,"VOCAL REVERB",
+        "Shape the estimate of the voice's reverb separately from the lead.");
+    steps.emplace_back(&header,"QUALITY AND CONTROL",
+        "Open the header menu to choose quality, control interaction and window size.");
+    guidedTour.setPalette({Theme::accent,Theme::background,
+        Theme::text,Theme::textDim,juce::Colour(0xd9000000)});
+    guidedTour.setSteps(std::move(steps));
+    if(firstRun)guidedTour.startIfFirstRun();
+    else guidedTour.replay();
 }
 
 void SkellSeparatorAudioProcessorEditor::paint(juce::Graphics& g)
@@ -153,6 +174,7 @@ void SkellSeparatorAudioProcessorEditor::showMenu()
     popup.addSubMenu("Scale", scale);
     popup.addSeparator();
     popup.addItem(50, "About / Model Status");
+    popup.addItem(51, "Help / Show Tutorial");
     juce::Component::SafePointer<SkellSeparatorAudioProcessorEditor> safe(this);
     popup.showMenuAsync(juce::PopupMenu::Options().withTargetComponent(&header),
         [safe](int result)
@@ -160,7 +182,8 @@ void SkellSeparatorAudioProcessorEditor::showMenu()
             if (safe == nullptr) return;
             auto& editor = *safe.getComponent();
             auto& p = editor.processor;
-            if (result == 1) p.resetAllParameters();
+            if (result == 51) editor.showGuidedTour(false);
+            else if (result == 1) p.resetAllParameters();
             else if (result == 2)
             {
                 juce::String out("Skell Separator settings\n");

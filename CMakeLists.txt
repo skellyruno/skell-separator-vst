@@ -15,6 +15,14 @@ else()
     FetchContent_MakeAvailable(JUCE)
 endif()
 
+# Pinned shared UI tutorial headers; leave existing audio engine untouched.
+FetchContent_Declare(SkellGuidedTourHeaders
+  GIT_REPOSITORY https://github.com/skellyruno/skell-vst-template.git
+  GIT_TAG 3306ad495c93e062e39b8abbf079534b0b53da4e
+  GIT_SHALLOW FALSE
+  SOURCE_SUBDIR _guided_tour_headers_only)
+FetchContent_MakeAvailable(SkellGuidedTourHeaders)
+
 juce_add_plugin(SkellSeparator
     COMPANY_NAME "Skell Audio"
     BUNDLE_ID "audio.skell.separator"
@@ -51,6 +59,7 @@ target_sources(SkellSeparator PRIVATE
     Source/ui/RoundIconButton.h Source/ui/RoundIconButton.cpp
     Source/ui/HeaderBar.h Source/ui/HeaderBar.cpp)
 
+target_include_directories(SkellSeparator PRIVATE "${skellguidedtourheaders_SOURCE_DIR}/SkellCore/include")
 target_compile_features(SkellSeparator PRIVATE cxx_std_17)
 target_compile_definitions(SkellSeparator PRIVATE
     JUCE_WEB_BROWSER=0 JUCE_USE_CURL=0
@@ -97,13 +106,14 @@ option(SKELL_BUILD_UI_RENDERER "Build SkellCore real-editor PNG validation harne
 if(SKELL_BUILD_UI_RENDERER)
     FetchContent_Declare(SkellCoreScreenshot
         GIT_REPOSITORY https://github.com/skellyruno/skell-vst-template.git
-        GIT_TAG 568a17fd1956065f06d20813f5e57c3621c1cac9
+        GIT_TAG 3306ad495c93e062e39b8abbf079534b0b53da4e
         SOURCE_SUBDIR SkellCore)
     FetchContent_MakeAvailable(SkellCoreScreenshot)
     # Plain executable, not juce_add_console_app: otherwise JUCE's standalone
     # flags conflict with the linked plugin SharedCode target.
     add_executable(SkellSeparatorUIRenderer tests/ui_renderer.cpp)
     target_include_directories(SkellSeparatorUIRenderer PRIVATE
+    "${skellguidedtourheaders_SOURCE_DIR}/SkellCore/include"
         "${CMAKE_CURRENT_BINARY_DIR}/SkellSeparator_artefacts/JuceLibraryCode")
     target_link_libraries(SkellSeparatorUIRenderer PRIVATE
         SkellSeparator SkellCore::UIRenderer
