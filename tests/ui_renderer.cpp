@@ -34,9 +34,12 @@ int main(int argc, char** argv) {
             {"compact-voice-solo", 785, 448, 0, 2, false},
             {"compact-neural", 785, 448, 0, 3, false},
             {"standard-classical", 1047, 597, 0, 0, false},
-            {"large-classical", 1571, 896, 0, 0, false}
+            {"large-classical", 1571, 896, 0, 0, false},
+            {"compact-guided-tour", 785, 448, 0, 4, false},
+            {"large-guided-tour", 1571, 896, 0, 4, false}
         };
         options.configure = [&](const skellcore::ui::headless::Scene& scene) {
+            editor.dismissTourForScreenshot();
             processor.usePreset(0);
             setParameter(processor.apvts, "bypass", scene.mode == 1 ? 1.0f : 0.0f);
             setParameter(processor.apvts, "voiceSolo", scene.mode == 2 ? 1.0f : 0.0f);
@@ -44,6 +47,10 @@ int main(int argc, char** argv) {
             // Update the actual editor state synchronously on the JUCE GUI
             // thread. Modal message-pumping APIs are unavailable to plugins.
             editor.refreshForScreenshot();
+            if (scene.mode == 4 && !editor.replayTourForScreenshot()) {
+                std::fprintf(stderr, "Separator tour failed to show in actual editor\\n");
+                ++failures;
+            }
         };
         options.inspect = [&] {
             juce::StringArray errors;
@@ -66,7 +73,9 @@ int main(int argc, char** argv) {
         options.mustDiffer = {
             {"compact-classical", "compact-bypass"},
             {"compact-classical", "compact-voice-solo"},
-            {"compact-classical", "compact-neural"}
+            {"compact-classical", "compact-neural"},
+            {"compact-classical", "compact-guided-tour"},
+            {"large-classical", "large-guided-tour"}
         };
         const auto result = skellcore::ui::headless::render(editor, output, options);
         for (const auto& error : result.errors) {
