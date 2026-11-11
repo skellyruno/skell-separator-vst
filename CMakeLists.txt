@@ -97,7 +97,7 @@ option(SKELL_BUILD_UI_RENDERER "Build SkellCore real-editor PNG validation harne
 if(SKELL_BUILD_UI_RENDERER)
     FetchContent_Declare(SkellCoreScreenshot
         GIT_REPOSITORY https://github.com/skellyruno/skell-vst-template.git
-        GIT_TAG 1f759e4f6ab08d950aaccfc2dfc0415825461ff1
+        GIT_TAG 568a17fd1956065f06d20813f5e57c3621c1cac9
         SOURCE_SUBDIR SkellCore)
     FetchContent_MakeAvailable(SkellCoreScreenshot)
     # Plain executable, not juce_add_console_app: otherwise JUCE's standalone
