@@ -74,10 +74,11 @@ HeaderBar::HeaderBar(SkellSeparatorAudioProcessor& p) : processor(p)
     };
     engine.onClick = [this]
     {
-        if (!processor.hasNeuralBackend()) return;
+        const bool selected = processor.apvts.getRawParameterValue("engineMode")->load() > 0.5f;
+        // Allow exiting Neural after reopening at an unsupported sample rate.
+        if (!selected && !processor.hasNeuralBackend()) return;
         if (auto* param = processor.apvts.getParameter("engineMode"))
         {
-            const bool selected = processor.apvts.getRawParameterValue("engineMode")->load() > 0.5f;
             param->beginChangeGesture();
             param->setValueNotifyingHost(param->convertTo0to1(selected ? 0.0f : 1.0f));
             param->endChangeGesture();
@@ -145,9 +146,11 @@ void HeaderBar::refresh(bool active)
     const auto isStereo = processor.apvts.getRawParameterValue("channelMode")->load() > 0.5f;
     const auto isBypassed = processor.apvts.getRawParameterValue("bypass")->load() > 0.5f
                          || processor.hostBypassActive.load(std::memory_order_relaxed);
-    engine.setEnabled(processor.hasNeuralBackend());
-    engine.updateState(processor.apvts.getRawParameterValue("engineMode")->load() > 0.5f,
-                       processor.hasNeuralBackend(), isBypassed, processor.isOfflineNeural());
+    const bool selected = processor.apvts.getRawParameterValue("engineMode")->load() > 0.5f;
+    // Disable only entering unavailable Neural, never leaving it.
+    engine.setEnabled(processor.hasNeuralBackend() || selected);
+    engine.updateState(selected, processor.hasNeuralBackend(), isBypassed,
+                       processor.isOfflineNeural());
     mode.setCaption(isStereo ? "Stereo" : "Mono");
     mode.setAccentEnabled(isStereo && active && !isBypassed);
     bypass.setOutlineEnabled(isBypassed);

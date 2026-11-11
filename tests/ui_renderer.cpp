@@ -48,15 +48,19 @@ int main(int argc, char** argv) {
         options.inspect = [&] {
             juce::StringArray errors;
             const auto box = editor.getLocalBounds();
-            if (editor.getNumChildComponents() != 4)
-                errors.add("expected exactly one header and three stem columns");
+            int headers = 0, stemColumns = 0;
             for (int i = 0; i < editor.getNumChildComponents(); ++i) {
                 auto* child = editor.getChildComponent(i);
+                headers += dynamic_cast<HeaderBar*>(child) != nullptr;
+                stemColumns += dynamic_cast<StemColumn*>(child) != nullptr;
+                // JUCE itself adds a resize-corner child for setResizable(true,true).
                 if (child->isVisible() && !box.contains(child->getBounds()))
                     errors.add("child outside editor canvas");
                 if (child->getWidth() <= 0 || child->getHeight() <= 0)
                     errors.add("zero-sized UI child");
             }
+            if (headers != 1 || stemColumns != 3)
+                errors.add("expected one real header and exactly three real stem panels");
             return errors;
         };
         options.mustDiffer = {
