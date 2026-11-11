@@ -13,6 +13,9 @@ public:
     ~SkellSeparatorAudioProcessorEditor() override;
     void paint(juce::Graphics&) override;
     void resized() override;
+    // Reuse the actual editor timer update during headless screenshot tests.
+    // No fake controls, message-loop blocking, or DSP processing required.
+    void refreshForScreenshot() { timerCallback(); }
 private:
     void timerCallback() override;
     void showMenu();

@@ -41,9 +41,9 @@ int main(int argc, char** argv) {
             setParameter(processor.apvts, "bypass", scene.mode == 1 ? 1.0f : 0.0f);
             setParameter(processor.apvts, "voiceSolo", scene.mode == 2 ? 1.0f : 0.0f);
             setParameter(processor.apvts, "engineMode", scene.mode == 3 ? 1.0f : 0.0f);
-            // Flush APVTS attachments and the 45 Hz editor animation before
-            // taking an image. This is the JUCE GUI message thread.
-            juce::MessageManager::getInstance()->runDispatchLoopUntil(100);
+            // Update the actual editor state synchronously on the JUCE GUI
+            // thread. Modal message-pumping APIs are unavailable to plugins.
+            editor.refreshForScreenshot();
         };
         options.inspect = [&] {
             juce::StringArray errors;
