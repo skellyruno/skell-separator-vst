@@ -45,8 +45,9 @@ void StemColumn::paint(juce::Graphics& g)
                         : !panelAudible ? "NOT IN OUTPUT MIX"
                         : stem == 0 ? "AMBIENCE / RESIDUAL"
                         : stem == 1 ? "VOICE / ESTIMATE" : "REVERB / ESTIMATE";
-    g.setColour((panelActive && panelAudible ? Theme::textDim : Theme::textDim.withAlpha(0.66f)));
-    g.setFont(Theme::mono(12.4f));
+    // Make secondary labels readable at the default 75%-scale editor size.
+    g.setColour(Theme::textDim.withAlpha(panelAudible && !panelBypassed ? 0.96f : 0.88f));
+    g.setFont(Theme::mono(14.0f));
     g.drawText(detail, 24, 453, 262, 16, juce::Justification::centred, false);
 }
 

@@ -112,7 +112,7 @@ void HeaderBar::paint(juce::Graphics& g)
         g.drawRoundedRectangle(indicator, 5.0f, 0.8f);
     }
     g.setColour(overloadVisible ? Theme::text : Theme::textDim.withAlpha(0.55f));
-    g.setFont(Theme::mono(11.0f));
+    g.setFont(Theme::mono(12.3f));
     g.drawText(overloadVisible ? "OVER" : "PEAK", indicator, juce::Justification::centred, false);
 }
 

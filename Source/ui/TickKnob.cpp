@@ -73,8 +73,11 @@ void TickKnob::paint(juce::Graphics& g)
         const float a = from + sweep * static_cast<float>(i) / 54.0f;
         const auto a0 = Theme::radial(centre, major ? 117.0f : 122.0f, a);
         const auto a1 = Theme::radial(centre, i == 27 ? 132.0f : 129.0f, a);
+        // Solo and Bypass dim the entire inactive stem, not just its pointer.
+        const float brightness = (i / 54.0f <= fraction ? 0.85f : 0.56f)
+                               * (muted ? 0.26f : 1.0f);
         g.setColour((i / 54.0f <= fraction ? Theme::ticks : Theme::ticksOff)
-                    .withAlpha(i / 54.0f <= fraction ? 0.85f : 0.56f));
+                    .withAlpha(brightness));
         if (i == 0 || i == 54)
             g.fillEllipse(a1.x - 1.7f, a1.y - 1.7f, 3.4f, 3.4f);
         else
