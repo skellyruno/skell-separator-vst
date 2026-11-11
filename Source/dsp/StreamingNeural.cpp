@@ -56,7 +56,7 @@ std::unique_ptr<NeuralFrameBackend> createRNNoiseBackend() {
 std::unique_ptr<NeuralFrameBackend> createRNNoiseBackend() { return {}; }
 #endif
 
-bool StreamingNeural::start(std::unique_ptr<NeuralFrameBackend> newBackend) {
+bool StreamingNeural::start(std::unique_ptr<NeuralFrameBackend> newBackend, bool offlineRender) {
     stop();
     incoming.clear(); outgoing.clear();
     for (auto& r : ready) r.startSample = -1;
@@ -64,6 +64,8 @@ bool StreamingNeural::start(std::unique_ptr<NeuralFrameBackend> newBackend) {
     fill = 0;
     selectedFrame = -1;
     selectedValid = false;
+    inlineMode = offlineRender;
+    inlinePreviousStart = -1;
     dropped.store(0, std::memory_order_relaxed);
     missed.store(0, std::memory_order_relaxed);
     completed.store(0, std::memory_order_relaxed);
@@ -76,7 +78,7 @@ bool StreamingNeural::start(std::unique_ptr<NeuralFrameBackend> newBackend) {
     if (!newBackend || !newBackend->valid()) return false;
     backend = std::move(newBackend);
     running.store(true, std::memory_order_release);
-    worker = std::thread([this] { threadMain(); });
+    if (!inlineMode) worker = std::thread([this] { threadMain(); });
     enabled.store(true, std::memory_order_release);
     return true;
 }
@@ -89,7 +91,7 @@ void StreamingNeural::stop() noexcept {
 }
 
 void StreamingNeural::threadMain() noexcept {
-    NeuralFrame frame, result;
+    NeuralFrame frame;
     std::int64_t previousStart = -1;
     while (running.load(std::memory_order_acquire)) {
         if (!incoming.pop(frame)) {
@@ -106,47 +108,55 @@ void StreamingNeural::threadMain() noexcept {
             previousStart = -1; // do not let recurrent history span the gap
             continue;
         }
-        if (previousStart < 0 || frame.startSample != previousStart + neuralFrameSize) {
-            backend->reset();
-            previousStart = -1;
-        }
-        // Fill with a non-finite sentinel so even a backend that writes only
-        // PART of its output is rejected (rather than silently introducing
-        // zero-filled holes in the Voice stem). This runs on the worker only.
-        result.startSample = -1;
-        result.valid = true;
-        for (auto& channel : result.audio)
-            channel.fill(std::numeric_limits<float>::quiet_NaN());
-        const auto started = std::chrono::steady_clock::now();
-        backend->process(frame, result);
-        for (const auto& channel : result.audio)
-            for (const float value : channel)
-                if (!std::isfinite(value) || std::abs(value) > 8.0f)
-                    result.valid = false;
-        if (!result.valid)
-            rejected.fetch_add(1, std::memory_order_relaxed);
-        const auto durationUs = static_cast<std::uint64_t>(
-            std::chrono::duration_cast<std::chrono::microseconds>(
-                std::chrono::steady_clock::now() - started).count());
-        workerTimeUs.fetch_add(durationUs, std::memory_order_relaxed);
-        workerFrames.fetch_add(1, std::memory_order_relaxed);
-        auto maxUs = workerMaxUs.load(std::memory_order_relaxed);
-        while (durationUs > maxUs &&
-               !workerMaxUs.compare_exchange_weak(maxUs, durationUs, std::memory_order_relaxed)) {}
-        if (previousStart >= 0) {
-            result.startSample = previousStart;
-            if (!outgoing.push(result)) dropped.fetch_add(1, std::memory_order_relaxed);
-            else completed.fetch_add(1, std::memory_order_relaxed);
-        }
-        // A corrupt recurrent model state can contaminate ALL future frames.
-        // Reset on the worker, discard the frame needed to re-prime its
-        // one-frame look-behind, and preserve the original sample timestamps.
-        if (!result.valid) {
-            backend->reset();
-            previousStart = -1;
-        } else {
-            previousStart = frame.startSample;
-        }
+        processFrame(frame, previousStart);
+    }
+}
+
+// Shared frame validation and timestamp handling for both the live worker
+// and the dedicated offline path. No worker is started in offline mode.
+void StreamingNeural::processFrame(const NeuralFrame& frame,
+                                   std::int64_t& previousStart) noexcept {
+    NeuralFrame result;
+    if (previousStart < 0 || frame.startSample != previousStart + neuralFrameSize) {
+        backend->reset();
+        previousStart = -1;
+    }
+    // Fill with a non-finite sentinel so even a backend that writes only
+    // PART of its output is rejected (rather than silently introducing
+    // zero-filled holes in the Voice stem). No allocations occur here.
+    result.startSample = -1;
+    result.valid = true;
+    for (auto& channel : result.audio)
+        channel.fill(std::numeric_limits<float>::quiet_NaN());
+    const auto started = std::chrono::steady_clock::now();
+    backend->process(frame, result);
+    for (const auto& channel : result.audio)
+        for (const float value : channel)
+            if (!std::isfinite(value) || std::abs(value) > 8.0f)
+                result.valid = false;
+    if (!result.valid)
+        rejected.fetch_add(1, std::memory_order_relaxed);
+    const auto durationUs = static_cast<std::uint64_t>(
+        std::chrono::duration_cast<std::chrono::microseconds>(
+            std::chrono::steady_clock::now() - started).count());
+    workerTimeUs.fetch_add(durationUs, std::memory_order_relaxed);
+    workerFrames.fetch_add(1, std::memory_order_relaxed);
+    auto maxUs = workerMaxUs.load(std::memory_order_relaxed);
+    while (durationUs > maxUs &&
+           !workerMaxUs.compare_exchange_weak(maxUs, durationUs, std::memory_order_relaxed)) {}
+    if (previousStart >= 0) {
+        result.startSample = previousStart;
+        if (!outgoing.push(result)) dropped.fetch_add(1, std::memory_order_relaxed);
+        else completed.fetch_add(1, std::memory_order_relaxed);
+    }
+    // A corrupt recurrent model state can contaminate ALL future frames.
+    // Reset the model, discard the frame needed to re-prime its
+    // one-frame look-behind, and preserve the original sample timestamps.
+    if (!result.valid) {
+        backend->reset();
+        previousStart = -1;
+    } else {
+        previousStart = frame.startSample;
     }
 }
 
@@ -170,7 +180,13 @@ void StreamingNeural::submitSample(float left, float right, std::int64_t sampleI
     collecting.audio[1][index] = std::isfinite(right) ? right : 0.0f;
     if (++fill == neuralFrameSize) {
         latestPublishedStart.store(collecting.startSample, std::memory_order_release);
-        if (!incoming.push(collecting)) dropped.fetch_add(1, std::memory_order_relaxed);
+        if (inlineMode) {
+            // Unlike an accelerated bounce on the asynchronous worker, every
+            // frame finishes before the host advances past its output deadline.
+            processFrame(collecting, inlinePreviousStart);
+        } else if (!incoming.push(collecting)) {
+            dropped.fetch_add(1, std::memory_order_relaxed);
+        }
         fill = 0;
     }
 }

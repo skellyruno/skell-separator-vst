@@ -40,7 +40,9 @@ public:
     StreamingNeural(const StreamingNeural&) = delete;
     StreamingNeural& operator=(const StreamingNeural&) = delete;
 
-    bool start(std::unique_ptr<NeuralFrameBackend>);
+    // Offline rendering runs inference synchronously on the non-real-time
+    // host rendering thread for deterministic bounce output. Live remains async.
+    bool start(std::unique_ptr<NeuralFrameBackend>, bool offlineRender = false);
     void stop() noexcept;
     // Submit only while neural is selected. A disabled period discards any
     // partial input frame so a later restart cannot mislabel its timestamp.
@@ -50,6 +52,7 @@ public:
     // A late result must never shift the input/output timeline.
     bool readSample(std::int64_t originalSample, std::array<float, 2>& out) noexcept;
     bool active() const noexcept { return enabled.load(std::memory_order_relaxed); }
+    bool rendersOffline() const noexcept { return inlineMode; }
     std::uint64_t droppedFrames() const noexcept { return dropped.load(std::memory_order_relaxed); }
     std::uint64_t missedDeadlines() const noexcept { return missed.load(std::memory_order_relaxed); }
     std::uint64_t completedFrames() const noexcept { return completed.load(std::memory_order_relaxed); }
@@ -85,6 +88,7 @@ private:
         }
     };
     void threadMain() noexcept;
+    void processFrame(const NeuralFrame&, std::int64_t& previousStart) noexcept;
     Queue<neuralQueueCapacity> incoming, outgoing;
     std::array<NeuralFrame, 16> ready {};   // audio-thread-owned cache
     NeuralFrame collecting {};
@@ -97,5 +101,9 @@ private:
     int fill = 0;
     std::int64_t selectedFrame = -1;
     bool selectedValid = false;
+    // Immutable between start() and stop(). Only the audio callback owns this
+    // timeline in offline mode; no worker accesses the model concurrently.
+    bool inlineMode = false;
+    std::int64_t inlinePreviousStart = -1;
 };
 }

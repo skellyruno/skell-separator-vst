@@ -6,13 +6,19 @@ EngineBadge::EngineBadge() : juce::Button("Processing engine")
     setTooltip("Switch DSP / experimental neural. Neural requires a 48 kHz host sample rate.");
 }
 
-void EngineBadge::updateState(bool selected, bool available, bool bypassed)
+void EngineBadge::updateState(bool selected, bool available, bool bypassed, bool offline)
 {
-    if (selected != neuralSelected || available != modelAvailable || bypassed != isBypassed)
+    if (selected != neuralSelected || available != modelAvailable || bypassed != isBypassed || offline != offlineMode)
     {
         neuralSelected = selected;
         modelAvailable = available;
         isBypassed = bypassed;
+        offlineMode = offline;
+        setTooltip(neuralSelected ? (modelAvailable ? (offlineMode
+            ? "Neural experimental | deterministic offline render | fixed 2880 samples"
+            : "Neural experimental | asynchronous live inference | fixed 2880 samples")
+            : "Neural model unavailable: 48 kHz host rate required")
+            : "Classical separation | click to switch to experimental neural");
         repaint();
     }
 }
@@ -38,7 +44,7 @@ void EngineBadge::paintButton(juce::Graphics& g, bool hover, bool down)
                juce::Justification::centred, false);
     g.setColour(modelAvailable ? Theme::text : Theme::textDim);
     g.setFont(Theme::mono(11.2f));
-    const char* status = neuralSelected ? (modelAvailable ? "NEURAL / EXPERIMENTAL" : "NEURAL / UNAVAILABLE")
+    const char* status = neuralSelected ? (modelAvailable ? (offlineMode ? "NEURAL / OFFLINE" : "NEURAL / EXPERIMENTAL") : "NEURAL / UNAVAILABLE")
                                         : (modelAvailable ? "CLASSICAL / AI READY" : "CLASSICAL / DSP ONLY");
     g.drawText(status, 41, 2, 174, 22, juce::Justification::centredLeft, false);
 }
@@ -141,7 +147,7 @@ void HeaderBar::refresh(bool active)
                          || processor.hostBypassActive.load(std::memory_order_relaxed);
     engine.setEnabled(processor.hasNeuralBackend());
     engine.updateState(processor.apvts.getRawParameterValue("engineMode")->load() > 0.5f,
-                       processor.hasNeuralBackend(), isBypassed);
+                       processor.hasNeuralBackend(), isBypassed, processor.isOfflineNeural());
     mode.setCaption(isStereo ? "Stereo" : "Mono");
     mode.setAccentEnabled(isStereo && active && !isBypassed);
     bypass.setOutlineEnabled(isBypassed);

@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.22)
-project(SkellSeparator VERSION 1.12.0 LANGUAGES C CXX)
+project(SkellSeparator VERSION 1.13.0 LANGUAGES C CXX)
 
 # Uses the same JUCE FetchContent/Windows runner arrangement as the known-good
 # StopDial starter. Optional -DJUCE_PATH=... supports offline/local builds.
@@ -88,4 +88,27 @@ if(SKELL_ENABLE_TINY_NEURAL)
         models/TinyVocalWeights.h)
     target_compile_definitions(SkellSeparator PRIVATE SKELL_WITH_TINY_VOCAL=1)
     message(STATUS "Skell Tiny Neural compiled; latency 2880 samples (60 ms at 48 kHz), default engine Classical")
+endif()
+
+# Optional real-editor visual regression. Production VST3/Standalone builds do
+# not fetch SkellCore; only the screenshot target needs the shared harness.
+# Pin the same known revision used by Skell-Preset's verified renderer.
+option(SKELL_BUILD_UI_RENDERER "Build SkellCore real-editor PNG validation harness" OFF)
+if(SKELL_BUILD_UI_RENDERER)
+    FetchContent_Declare(SkellCoreScreenshot
+        GIT_REPOSITORY https://github.com/skellyruno/skell-vst-template.git
+        GIT_TAG 1f759e4f6ab08d950aaccfc2dfc0415825461ff1
+        SOURCE_SUBDIR SkellCore)
+    FetchContent_MakeAvailable(SkellCoreScreenshot)
+    # Plain executable, not juce_add_console_app: otherwise JUCE's standalone
+    # flags conflict with the linked plugin SharedCode target.
+    add_executable(SkellSeparatorUIRenderer tests/ui_renderer.cpp)
+    target_include_directories(SkellSeparatorUIRenderer PRIVATE
+        "${CMAKE_CURRENT_BINARY_DIR}/SkellSeparator_artefacts/JuceLibraryCode")
+    target_link_libraries(SkellSeparatorUIRenderer PRIVATE
+        SkellSeparator SkellCore::UIRenderer
+        juce::juce_audio_utils juce::juce_gui_extra)
+    target_compile_definitions(SkellSeparatorUIRenderer PRIVATE
+        JUCE_WEB_BROWSER=0 JUCE_USE_CURL=0)
+    target_compile_features(SkellSeparatorUIRenderer PRIVATE cxx_std_17)
 endif()

@@ -1,3 +1,10 @@
+## 1.13.0 — Deterministic offline neural bounce and DSP/UX accuracy
+
+- Run the same trained 48 kHz model on the non-real-time render thread when the host has declared offline mode before `prepareToPlay`; leave live playback on a nonblocking worker. No new dependencies.
+- Share frame validation/timestamp handling across both modes, retaining the exact 2,880-sample alignment. Reject corrupt neural frames and re-prime after gaps in both modes.
+- Make UI engine state and tooltip explain offline-vs-live neural processing. Rename model timings to match either execution mode. Keep compact geometry and existing automation IDs.
+- Add accelerated stereo offline export tests, corrupt-frame recovery, sanitizer CI, and explicit host-state limitations in `docs/V1_13_OFFLINE_NEURAL.md`.
+
 ## v1.12 (2026-11-10) — Real-time safety and compact UI reliability
 
 - Stop wasting neural inference CPU on frames that cannot reach the fixed-latency output deadline in accelerated offline rendering or model overload. Expired model frames are skipped and the **aligned classical fallback** remains in charge; no waiting, locks or model processing on the audio callback. New mock stalled-worker regression tests.

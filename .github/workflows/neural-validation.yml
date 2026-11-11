@@ -12,10 +12,14 @@ jobs:
       - uses: actions/checkout@v4
       - name: Compile and run fixed-latency + missed-deadline tests
         run: bash tests/run_neural_contract.sh
+      - name: Deterministic non-real-time neural inference (offline bounce)
+        run: bash tests/run_neural_offline.sh
       - name: Test loss-safe neural/classical stem crossfade
         run: bash tests/run_neural_blend.sh
       - name: Test actual trained Tiny Vocal backend and exact stereo WOLA
         run: bash tests/run_tiny_vocal.sh
+      - name: Actual TinyVocalNet deterministic offline inference parity
+        run: bash tests/run_tiny_offline.sh
       - name: Procedural reference-mix benchmark (diagnostic, not real vocal quality)
         run: bash tests/run_tiny_benchmark.sh
       - name: Sanitized Tiny Vocal inference and WOLA
@@ -30,6 +34,11 @@ jobs:
           SKELL_SANITIZE: "1"
           SKELL_TEST_BINARY: /tmp/skell-neural-asan
         run: bash tests/run_neural_contract.sh
+      - name: Sanitized offline neural inference
+        env:
+          SKELL_SANITIZE: "1"
+          SKELL_TEST_BINARY: /tmp/skell-neural-offline-asan
+        run: bash tests/run_neural_offline.sh
       - name: Sanitized neural dropout crossfade
         env:
           SKELL_SANITIZE: "1"

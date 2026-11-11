@@ -1,3 +1,5 @@
+> v1.13: In hosts that announce non-real-time mode **before** `prepareToPlay`, experimental neural offline exports now use synchronous inference on the offline render thread. Real-time playback remains worker-threaded and nonblocking. This avoids deadline-based Classical fallback during accelerated exports while preserving 2,880-sample alignment. Hosts that switch the offline flag after prepare without re-preparing require a subsequent host compatibility check.
+
 # v1.12 — Compact interface and neural deadline recovery
 
 The editor keeps the **785×448 default** and its resized scale now persists in saved projects. The header's **PEAK** label turns to **OVER** when the floating-point output exceeds 0 dBFS (sample peak, not true peak); it does not clamp your mix. In neural mode, the model worker now skips frames that are already past the fixed 2,880-sample output contract, allowing the latency-aligned classical fallback to take over under overload and accelerated offline bounce. The classical and neural model quality/weights are unchanged. See `docs/V1_12_RELEASE_CHECKS.md` and `tests/ui_layout_contract.py` for verification details.

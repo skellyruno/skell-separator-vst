@@ -81,7 +81,10 @@ void SkellSeparatorAudioProcessor::prepareToPlay(double sampleRate, int)
         backend = skell::createRNNoiseBackend();
 #endif
     }
-    neural.start(std::move(backend));
+    // Hosts normally set the non-realtime flag before prepareToPlay. In an
+    // offline bounce, deterministic inline inference is safe and avoids
+    // asynchronous worker starvation. Live playback remains lock-free.
+    neural.start(std::move(backend), isNonRealtime());
     mixer.prepare(sampleRate);
     // Host state may be restored before prepare. Honor the saved settings on
     // the very first processed sample (especially a bypassed session).

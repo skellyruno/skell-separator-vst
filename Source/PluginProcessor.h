@@ -49,6 +49,7 @@ public:
                engineModeParam->load(std::memory_order_relaxed) > 0.5f;
     }
     bool hasNeuralBackend() const noexcept { return neural.active(); }
+    bool isOfflineNeural() const noexcept { return neural.active() && neural.rendersOffline(); }
     const char* neuralBackendName() const noexcept {
 #if defined(SKELL_WITH_TINY_VOCAL) && SKELL_WITH_TINY_VOCAL
         return "Tiny Vocal Mask — synthetic-trained experimental model";
