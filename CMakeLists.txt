@@ -113,6 +113,7 @@ if(SKELL_BUILD_UI_RENDERER)
     # flags conflict with the linked plugin SharedCode target.
     add_executable(SkellSeparatorUIRenderer tests/ui_renderer.cpp)
     target_include_directories(SkellSeparatorUIRenderer PRIVATE
+    "${skellguidedtourheaders_SOURCE_DIR}/SkellCore/include"
         "${CMAKE_CURRENT_BINARY_DIR}/SkellSeparator_artefacts/JuceLibraryCode")
     target_link_libraries(SkellSeparatorUIRenderer PRIVATE
         SkellSeparator SkellCore::UIRenderer
