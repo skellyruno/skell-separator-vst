@@ -58,11 +58,13 @@ public:
         detector = level + (detector - level) * (level > detector ? attack : detectorRelease);
         // An upward noise-floor estimate is only allowed well below speech
         // onset. Prolonged vocals never train the profile upward.
-        if (detector <= std::max(floor * 2.7f, 0.00034f)) {
+        if (detector <= std::max(floor * 2.7f, 0.0035f * cleanAmount)) {
             const float candidate = std::max(detector, 0.00003f);
             floor = candidate + (floor - candidate) * (candidate > floor ? floorRise : floorFall);
         }
-        const float threshold = std::clamp(floor * thresholdMultiplier, 0.00013f, 0.035f);
+        const float threshold = std::clamp(
+            std::max(floor * thresholdMultiplier, 0.003f * cleanAmount),
+            0.00013f, 0.035f);
         const bool voice = detector >= threshold || level >= threshold * 1.4f;
         if (voice) hold = holdSamples;
         else if (hold > 0) --hold;

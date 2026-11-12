@@ -20,6 +20,21 @@ int main() {
             assert(y[0] == x && y[1] == -x);
         }
         c.setControls(1.f, 0.75f);
+        // Starting from a silent room must NOT make future quiet noise look
+        // like foreground singing. This previously failed as floor -> zero.
+        for (int i = 0; i < sampleRate * 3; ++i)
+            (void)c.process(0.f, 0.f);
+        double afterSilenceIn = 0.0, afterSilenceOut = 0.0;
+        for (int i = 0; i < sampleRate * 3; ++i) {
+            const float noise = 0.0012f * std::sin(2.0 * pi * 151.0 * i / sampleRate);
+            const auto y = c.process(noise, -noise);
+            if (i >= sampleRate * 2) {
+                afterSilenceIn += noise * noise;
+                afterSilenceOut += y[0] * y[0];
+            }
+        }
+        assert(afterSilenceOut < afterSilenceIn * 0.4); // > 4dB attenuation.
+        c.reset();
         const auto invalid = c.process(std::numeric_limits<float>::infinity(),
                                        std::numeric_limits<float>::quiet_NaN());
         assert(invalid[0] == 0.f && invalid[1] == 0.f);
