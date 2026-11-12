@@ -42,9 +42,15 @@ for name, rect in controls.items():
     assert not intersects(over, rect), f"OVER overlaps {name}"
 
 panel = (7.5, 1.0, 295.0, 469.0)
-for name in ("gain", "solo", "mute", "meter"):
+for name in ("gain", "liveGain", "solo", "mute", "meter"):
     rect = bounds(column, name)
     assert inside(rect, panel), (name, rect)
+assert bounds(column, "liveGain") == bounds(column, "gain")
+assert 'gain.setVisible(!live)' in column and 'liveGain.setVisible(live)' in column
+assert 'solo.setVisible(!live)' in column and 'mute.setVisible(!live)' in column
+assert '"trackClean", "trackGate", "trackTails"' in column
+assert 'processor.setTrackingMode(!processor.isTrackingMode());' in header
+assert 'mode.setCaption(tracking ? "LIVE" : "SEPARATE")' in header
 for center in centers:
     assert inside((center-column_size[0]/2, 109, *column_size), (0, 0, *base)), center
 
@@ -66,7 +72,9 @@ assert 'stemgenResearch' in processor
 assert 'processor.availableNeuralMode() == 2 ? 1.0f : 0.0f' in header
 assert 'engine.setEnabled(processor.hasNeuralBackend() || selected || processor.isTrackingMode())' in header
 assert 'if (processor.isTrackingMode()) { processor.setTrackingMode(false); return; }' in header
-assert 'TRACK / 0ms DRY MIC' in header
-assert 'Track / CLEAN' in editor and 'Live Clean Amount' in editor
-assert 'TRACK / CLEAN ' in header
+assert 'LIVE / 0ms DRY MIC' in header
+assert 'LIVE / CLEANUP ON' in header
+assert 'LIVE — Clean / Gate / Tails' in editor
+assert 'SEPARATE — Ambience / Voice / Reverb' in editor
+assert '"trackGate"' in processor
 print("Static JUCE geometry/default/resize/engine-exit contract passed at 75%, 100%, 150% (not a render test)")

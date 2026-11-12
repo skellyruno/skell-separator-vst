@@ -29,7 +29,7 @@ public:
     void refresh(bool active);
 private:
     SkellSeparatorAudioProcessor& processor;
-    SoftButton mode { "Stereo" }, bypass { "Bypass" };
+    SoftButton mode { "SEPARATE" }, bypass { "Bypass" };
     EngineBadge engine;
     RoundIconButton previous { RoundIconButton::Kind::previous };
     RoundIconButton next { RoundIconButton::Kind::next };

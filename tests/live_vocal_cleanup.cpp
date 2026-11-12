@@ -13,13 +13,13 @@ int main() {
     for (int sampleRate : {44100, 48000, 96000}) {
         skell::LiveVocalCleanup c;
         c.prepare(sampleRate);
-        c.setControls(0.f, 0.35f);
+        c.setControls(0.f, 0.f, 0.35f);
         for (int i = 0; i < sampleRate; ++i) {
             const float x = (i % 119 == 0 ? -1.45f : (i % 241 == 0 ? 2.1f : 0.04f));
             const auto y = c.process(x, -x);
             assert(y[0] == x && y[1] == -x);
         }
-        c.setControls(1.f, 0.75f);
+        c.setControls(1.f, 0.f, 0.75f);
         // Starting from a silent room must NOT make future quiet noise look
         // like foreground singing. This previously failed as floor -> zero.
         for (int i = 0; i < sampleRate * 3; ++i)
@@ -83,9 +83,53 @@ int main() {
             (void)toggle.process(0.001f, -0.001f);
         const auto dry = toggle.process(0.001f, -0.001f);
         assert(dry[0] == 0.001f && dry[1] == -0.001f);
+
+        // Gate remains fully independent: Clean = 0 must not disable Gate.
+        skell::LiveVocalCleanup gate;
+        gate.prepare(sampleRate);
+        gate.setControls(0.f, 1.f, 0.35f);
+        double gatedIn = 0., gatedOut = 0.;
+        for (int i = 0; i < sampleRate * 2; ++i) {
+            const float noise = 0.00125f * std::sin(2.0 * pi * 163.0 * i / sampleRate);
+            const auto output = gate.process(noise, noise);
+            if (i > sampleRate * 17 / 10) {
+                gatedIn += static_cast<double>(noise) * noise;
+                gatedOut += static_cast<double>(output[0]) * output[0];
+            }
+        }
+        const double gateReduction = 10.0 * std::log10(gatedIn / std::max(gatedOut, 1.e-18));
+        assert(gateReduction > 12.0 && gateReduction < 80.0);
+        int gateOpen = -1;
+        for (int i = 0; i < sampleRate / 50; ++i) {
+            const float speech = 0.3f * std::sin(2.0 * pi * 412.0 * i / sampleRate);
+            const auto output = gate.process(speech, -speech);
+            if (gateOpen < 0 && std::abs(speech) > .08f &&
+                std::abs(output[0]) > std::abs(speech) * .95f)
+                gateOpen = i;
+        }
+        assert(gateOpen >= 0 && gateOpen < sampleRate / 1000);
+        // Tails must mean longer, more natural decay at higher values.
+        // Compare 100 ms after release from a sustained vocal event.
+        auto tailAfter = [&](float tails) {
+            skell::LiveVocalCleanup x;
+            x.prepare(sampleRate);
+            x.setControls(0.f, 1.f, tails);
+            for (int i = 0; i < sampleRate / 2; ++i)
+                x.process(0.3f, 0.3f);
+            std::array<float, 2> output {};
+            for (int i = 0; i < sampleRate / 5; ++i)
+                output = x.process(0.00125f, 0.00125f);
+            return output[0];
+        };
+        const float tight = tailAfter(0.f), natural = tailAfter(1.f);
+        assert(natural > tight * 1.5f && natural > 0.0009f);
+        std::printf("live gate %d Hz: gate-only attenuation %.2f dB, onset %d samples, tails tight %.7f / long %.7f\n",
+                    sampleRate, gateReduction, gateOpen, tight, natural);
+
         // Adversarial automation and silent input never produce NaNs/glitches.
         c.setControls(std::numeric_limits<float>::quiet_NaN(),
-                      std::numeric_limits<float>::infinity());
+                      std::numeric_limits<float>::infinity(),
+                      std::numeric_limits<float>::quiet_NaN());
         for (int i=0; i<512; ++i) {
             const auto y = c.process(0.f, 0.f);
             assert(y[0] == 0.f && y[1] == 0.f);

@@ -6,6 +6,24 @@ StemMeter::StemMeter(SpectralAnalyzer& a, int s) : analyzer(a), stem(s)
     setInterceptsMouseClicks(false, false);
 }
 
+void StemMeter::setLiveMode(bool enabled)
+{
+    if (live != enabled) {
+        live = enabled;
+        liveLevel = 0.f;
+        smoothed.fill(0.f);
+        repaint();
+    }
+}
+
+void StemMeter::refreshLive(float level, bool bypassed)
+{
+    const float target = bypassed ? 0.f : juce::jlimit(0.f, 1.f, level);
+    const float previous = liveLevel;
+    liveLevel += (target > liveLevel ? 0.70f : 0.18f) * (target - liveLevel);
+    if (std::abs(liveLevel - previous) > 0.001f) repaint();
+}
+
 void StemMeter::refresh(bool bypassed, bool muted, float gain)
 {
     const bool newDimmed = bypassed || muted;
@@ -30,6 +48,18 @@ void StemMeter::refresh(bool bypassed, bool muted, float gain)
 void StemMeter::paint(juce::Graphics& g)
 {
     g.addTransform(juce::AffineTransform::scale(getWidth() / 168.0f, getHeight() / 40.0f));
+    if (live) {
+        g.setColour(Theme::textDim.withAlpha(0.38f));
+        g.drawLine(2, 34.0f, 166.0f, 34.0f, 1.7f);
+        const auto amount = juce::jlimit(0.f, 1.f, liveLevel);
+        for (int i = 0; i < 20; ++i) {
+            const bool lit = static_cast<float>(i) < amount * 20.f;
+            g.setColour(lit ? Theme::accent.withAlpha(0.82f)
+                            : Theme::textDim.withAlpha(0.24f));
+            g.fillRoundedRectangle(3.0f + i * 8.15f, 22.f, 5.25f, 11.f, 1.5f);
+        }
+        return;
+    }
     g.setColour(Theme::textDim.withAlpha(0.38f));
     g.drawLine(2, 34.0f, 166.0f, 34.0f, 1.7f);
     juce::Path silhouette;

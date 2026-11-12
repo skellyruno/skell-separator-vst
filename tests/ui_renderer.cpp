@@ -35,6 +35,9 @@ int main(int argc, char** argv) {
             {"compact-neural", 785, 448, 0, 3, false},
             {"compact-track-monitor", 785, 448, 0, 5, false},
             {"compact-track-clean", 785, 448, 0, 6, false},
+            {"compact-track-gate", 785, 448, 0, 7, false},
+            {"standard-track-gate", 1047, 597, 0, 7, false},
+            {"large-track-clean", 1571, 896, 0, 6, false},
             {"standard-classical", 1047, 597, 0, 0, false},
             {"large-classical", 1571, 896, 0, 0, false},
             {"compact-guided-tour", 785, 448, 0, 4, false},
@@ -42,9 +45,11 @@ int main(int argc, char** argv) {
         };
         options.configure = [&](const skellcore::ui::headless::Scene& scene) {
             editor.dismissTourForScreenshot();
-            processor.setTrackingMode(scene.mode == 5 || scene.mode == 6);
+            processor.setTrackingMode(scene.mode == 5 || scene.mode == 6 || scene.mode == 7);
             setParameter(processor.apvts, "trackClean", scene.mode == 6 ? 55.0f : 0.0f);
-            if (processor.getLatencySamples() != ((scene.mode == 5 || scene.mode == 6) ? 0 : 2880))
+            setParameter(processor.apvts, "trackGate", scene.mode == 7 ? 75.0f : 0.0f);
+            setParameter(processor.apvts, "trackTails", scene.mode >= 5 ? 85.0f : 35.0f);
+            if (processor.getLatencySamples() != ((scene.mode == 5 || scene.mode == 6 || scene.mode == 7) ? 0 : 2880))
                 ++failures;
             processor.usePreset(0);
             setParameter(processor.apvts, "bypass", scene.mode == 1 ? 1.0f : 0.0f);
@@ -74,6 +79,17 @@ int main(int argc, char** argv) {
             }
             if (headers != 1 || stemColumns != 3)
                 errors.add("expected one real header and exactly three real stem panels");
+            for (int i = 0; i < editor.getNumChildComponents(); ++i) {
+                auto* column = dynamic_cast<StemColumn*>(editor.getChildComponent(i));
+                if (column == nullptr) continue;
+                if (column->isLiveMode() != processor.isTrackingMode())
+                    errors.add("knob mode not synchronized with LIVE / SEPARATE");
+                int visibleKnobs = 0;
+                for (int k = 0; k < column->getNumChildComponents(); ++k)
+                    if (dynamic_cast<TickKnob*>(column->getChildComponent(k)) != nullptr &&
+                        column->getChildComponent(k)->isVisible()) ++visibleKnobs;
+                if (visibleKnobs != 1) errors.add("expected exactly one visible hardware knob");
+            }
             return errors;
         };
         options.mustDiffer = {
@@ -82,6 +98,8 @@ int main(int argc, char** argv) {
             {"compact-classical", "compact-neural"},
             {"compact-classical", "compact-track-monitor"},
             {"compact-track-monitor", "compact-track-clean"},
+            {"compact-track-monitor", "compact-track-gate"},
+            {"compact-classical", "compact-track-gate"},
             {"compact-classical", "compact-guided-tour"},
             {"large-classical", "large-guided-tour"}
         };

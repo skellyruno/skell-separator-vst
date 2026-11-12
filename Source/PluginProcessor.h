@@ -106,6 +106,7 @@ private:
     std::atomic<float>* neuralStrengthParam = nullptr;
     std::atomic<float>* stemgenResearchParam = nullptr;
     std::atomic<float>* trackCleanParam = nullptr;
+    std::atomic<float>* trackGateParam = nullptr;
     std::atomic<float>* trackTailsParam = nullptr;
     juce::SmoothedValue<float, juce::ValueSmoothingTypes::Linear> strengthSmoothing;
     std::atomic<bool> trackingMode { false };

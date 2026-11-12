@@ -26,6 +26,7 @@ SkellSeparatorAudioProcessor::SkellSeparatorAudioProcessor()
     neuralStrengthParam = apvts.getRawParameterValue("neuralStrength");
     stemgenResearchParam = apvts.getRawParameterValue("stemgenResearch");
     trackCleanParam = apvts.getRawParameterValue("trackClean");
+    trackGateParam = apvts.getRawParameterValue("trackGate");
     trackTailsParam = apvts.getRawParameterValue("trackTails");
 }
 
@@ -64,6 +65,9 @@ juce::AudioProcessorValueTreeState::ParameterLayout SkellSeparatorAudioProcessor
     // restore semantics. Clean 0% keeps legacy Track Monitor bit-exact.
     layout.add(std::make_unique<juce::AudioParameterFloat>(
         juce::ParameterID { "trackClean", 1 }, "Track Clean",
+        juce::NormalisableRange<float>(0.0f, 100.0f, 1.0f), 0.0f));
+    layout.add(std::make_unique<juce::AudioParameterFloat>(
+        juce::ParameterID { "trackGate", 1 }, "Live Gate",
         juce::NormalisableRange<float>(0.0f, 100.0f, 1.0f), 0.0f));
     layout.add(std::make_unique<juce::AudioParameterFloat>(
         juce::ParameterID { "trackTails", 1 }, "Track Tails",
@@ -188,8 +192,10 @@ void SkellSeparatorAudioProcessor::processAudio(juce::AudioBuffer<float>& b, boo
         auto* r = channels == 2 ? b.getWritePointer(1) : nullptr;
         const float clean = bypassRequested ? 0.f :
             std::clamp(trackCleanParam->load(std::memory_order_relaxed) * 0.01f, 0.f, 1.f);
+        const float gate = bypassRequested ? 0.f :
+            std::clamp(trackGateParam->load(std::memory_order_relaxed) * 0.01f, 0.f, 1.f);
         const float tails = std::clamp(trackTailsParam->load(std::memory_order_relaxed) * 0.01f, 0.f, 1.f);
-        liveCleanup.setControls(clean, tails);
+        liveCleanup.setControls(clean, gate, tails);
         if (neural.active() && n > 0)
             neural.submitSample(0.f, 0.f, neuralSampleIndex, false);
         float peak = 0.f;
