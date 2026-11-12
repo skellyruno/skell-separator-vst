@@ -72,11 +72,11 @@ int main() {
         // heavily reduced noise level to full scale; settle to exact dry.
         skell::LiveVocalCleanup toggle;
         toggle.prepare(sampleRate);
-        toggle.setControls(1.f, 0.5f);
+        toggle.setControls(1.f, 0.f, 0.5f);
         for (int i=0; i<sampleRate*2; ++i)
             (void)toggle.process(0.001f, -0.001f);
         const auto beforeToggle = toggle.process(0.001f, -0.001f);
-        toggle.setControls(0.f, 0.5f);
+        toggle.setControls(0.f, 0.f, 0.5f);
         const auto firstDry = toggle.process(0.001f, -0.001f);
         assert(firstDry[0] >= beforeToggle[0] && firstDry[0]-beforeToggle[0] < 0.00015f);
         for (int i=0; i<sampleRate/100; ++i)
