@@ -125,7 +125,9 @@ void HeaderBar::paint(juce::Graphics& g)
         g.setColour(Theme::accent.withAlpha(0.87f));
         g.drawRoundedRectangle(indicator, 5.0f, 0.8f);
     }
-    g.setColour(overloadVisible ? Theme::text : Theme::textDim.withAlpha(0.55f));
+    g.setColour(overloadVisible ? Theme::text
+        : trackingClean ? (trackReductionRounded > 0 ? Theme::accent : Theme::text)
+        : Theme::textDim.withAlpha(0.55f));
     g.setFont(Theme::mono(12.3f));
     const auto indicatorText = overloadVisible ? juce::String("OVER")
         : trackingClean ? "GR " + juce::String(trackReductionRounded)
