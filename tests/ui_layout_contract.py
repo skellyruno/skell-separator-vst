@@ -59,6 +59,10 @@ for size in ((785, 448), (1047, 597), (1571, 896)):
         target = (round(x*sx), round(y*sy), round(w*sx), round(h*sy))
         assert inside(target, (0, 0, size[0], round(header_h*sy))), (size, name)
 # A recalled Neural setting at a different host rate must permit exiting it.
-assert 'if (!selected && !processor.hasNeuralBackend()) return;' in header
+assert 'if (!selected && processor.availableNeuralMode() == 0) return;' in header
+# Existing engineMode 0/1 normalization remains unchanged for saved host automation.
+assert 'juce::StringArray { "Classical", "Neural Experimental" }, 0)' in processor
+assert 'stemgenResearch' in processor
+assert 'processor.availableNeuralMode() == 2 ? 1.0f : 0.0f' in header
 assert 'engine.setEnabled(processor.hasNeuralBackend() || selected)' in header
 print("Static JUCE geometry/default/resize/engine-exit contract passed at 75%, 100%, 150% (not a render test)")
