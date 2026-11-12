@@ -51,8 +51,14 @@ public:
         if (cleanAmount <= 0.f) {
             // Keep detector warm during bypass, but never change the samples.
             detector = level + (detector - level) * (level > detector ? attack : detectorRelease);
-            gain = 1.f;
             hold = 0;
+            // Smooth Clean->Dry changes while audio is playing. A fresh Dry
+            // track starts with gain=1 and remains bit-exact from sample zero.
+            if (gain < 0.9999f) {
+                gain = 1.f + (gain - 1.f) * gainUp;
+                return {left * gain, right * gain};
+            }
+            gain = 1.f;
             return {left, right};
         }
         detector = level + (detector - level) * (level > detector ? attack : detectorRelease);

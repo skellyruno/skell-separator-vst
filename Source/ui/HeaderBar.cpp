@@ -47,7 +47,7 @@ void EngineBadge::paintButton(juce::Graphics& g, bool hover, bool down)
     g.setFont(Theme::mono(10.5f));
     g.drawText(isTracking ? "REC" : (neuralSelected ? "AI" : "DSP"), 5, 4, 31, 18,
                juce::Justification::centred, false);
-    g.setColour(modelAvailable ? Theme::text : Theme::textDim);
+    g.setColour((isTracking || modelAvailable) ? Theme::text : Theme::textDim);
     g.setFont(Theme::mono(11.2f));
     const juce::String status = isTracking ? (cleanLevel > 0
         ? "TRACK / CLEAN " + juce::String(cleanLevel) + "%" : "TRACK / 0ms DRY MIC") : neuralSelected ? (modelAvailable ? (offlineMode ? "NEURAL / OFFLINE" : "NEURAL / EXPERIMENTAL") : "NEURAL / UNAVAILABLE")

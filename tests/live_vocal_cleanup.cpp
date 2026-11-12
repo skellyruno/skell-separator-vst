@@ -68,6 +68,21 @@ int main() {
         assert(reopens >= 0 && reopens < sampleRate / 1000);
         const double vowelLoss = 20 * std::log10(std::sqrt(voiceIn / voiceOut));
         assert(std::abs(vowelLoss) < 0.1);
+        // Clean->Dry while transport runs must not jump abruptly from a
+        // heavily reduced noise level to full scale; settle to exact dry.
+        skell::LiveVocalCleanup toggle;
+        toggle.prepare(sampleRate);
+        toggle.setControls(1.f, 0.5f);
+        for (int i=0; i<sampleRate*2; ++i)
+            (void)toggle.process(0.001f, -0.001f);
+        const auto beforeToggle = toggle.process(0.001f, -0.001f);
+        toggle.setControls(0.f, 0.5f);
+        const auto firstDry = toggle.process(0.001f, -0.001f);
+        assert(firstDry[0] >= beforeToggle[0] && firstDry[0]-beforeToggle[0] < 0.00015f);
+        for (int i=0; i<sampleRate/100; ++i)
+            (void)toggle.process(0.001f, -0.001f);
+        const auto dry = toggle.process(0.001f, -0.001f);
+        assert(dry[0] == 0.001f && dry[1] == -0.001f);
         // Adversarial automation and silent input never produce NaNs/glitches.
         c.setControls(std::numeric_limits<float>::quiet_NaN(),
                       std::numeric_limits<float>::infinity());
