@@ -156,7 +156,11 @@ void HeaderBar::refresh(bool active)
     const bool selected = processor.apvts.getRawParameterValue("engineMode")->load() > 0.5f;
     // Disable only entering unavailable Neural, never leaving it.
     engine.setEnabled(processor.hasNeuralBackend() || selected);
-    engine.updateState(selected, processor.hasNeuralBackend(), isBypassed,
+    // A saved StemgenRT selection must not show AI READY when the model
+    // is missing or the host runs at an incompatible sample rate.
+    const bool selectedModelAvailable = processor.hasNeuralBackend()
+        && (!selected || processor.isNeuralRunning());
+    engine.updateState(selected, selectedModelAvailable, isBypassed,
                        processor.isOfflineNeural());
     mode.setCaption(isStereo ? "Stereo" : "Mono");
     mode.setAccentEnabled(isStereo && active && !isBypassed);
