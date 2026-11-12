@@ -292,3 +292,8 @@ An experimental external 44.1 kHz ONNX vocal-separation backend is documented in
 [docs/STEMGENRT_RESEARCH.md](docs/STEMGENRT_RESEARCH.md). Model weights are **not**
 bundled; regular builds have no ONNX dependency. This does not replace the
 working TinyVocalNet or Classical engines.
+
+
+### Live Track Clean research
+
+Live Track provides Dry (bit-transparent, 0-sample PDC) and Clean (zero-lookahead adaptive downward expander, 0-sample PDC), adjustable Clean and Tails, and a header gain-reduction indicator. This is not neural denoising or true in-phrase vocal dereverberation. Full separation remains unchanged. See [tracking cleanup and fast-neural research notes](docs/LIVE_CLEANUP_AND_FAST_NEURAL.md).

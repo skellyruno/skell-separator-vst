@@ -6,20 +6,23 @@ EngineBadge::EngineBadge() : juce::Button("Processing engine")
     setTooltip("Switch DSP / selected neural model. Tiny: 48k, StemgenRT research: 44.1k.");
 }
 
-void EngineBadge::updateState(bool selected, bool available, bool bypassed, bool offline, bool tracking)
+void EngineBadge::updateState(bool selected, bool available, bool bypassed, bool offline, bool tracking, int cleanPercent)
 {
-    if (selected != neuralSelected || available != modelAvailable || bypassed != isBypassed || offline != offlineMode || tracking != isTracking)
+    if (selected != neuralSelected || available != modelAvailable || bypassed != isBypassed || offline != offlineMode || tracking != isTracking || (tracking && cleanPercent != cleanLevel))
     {
         isTracking = tracking;
+        cleanLevel = cleanPercent;
         neuralSelected = selected;
         modelAvailable = available;
         isBypassed = bypassed;
         offlineMode = offline;
-        setTooltip(isTracking ? "TRACK: zero added plugin latency, direct dry mic monitor; no vocal separation"
+        setTooltip(isTracking ? (cleanLevel > 0
+            ? "TRACK CLEAN: zero added samples, adaptive room-noise expander; not neural denoise or dereverb"
+            : "TRACK DRY: zero added samples, unmodified microphone; no separation")
             : neuralSelected ? (modelAvailable ? (offlineMode
             ? "Neural experimental | deterministic offline render | fixed 2880 samples"
             : "Neural experimental | asynchronous live inference | fixed 2880 samples")
-            : "Neural model unavailable for this host rate or not installed")
+            : "Neural model unavailable for this host rate or no model installed")
             : "Classical separation | click to switch to experimental neural");
         repaint();
     }
@@ -46,7 +49,8 @@ void EngineBadge::paintButton(juce::Graphics& g, bool hover, bool down)
                juce::Justification::centred, false);
     g.setColour(modelAvailable ? Theme::text : Theme::textDim);
     g.setFont(Theme::mono(11.2f));
-    const char* status = isTracking ? "TRACK / 0ms DRY MIC" : neuralSelected ? (modelAvailable ? (offlineMode ? "NEURAL / OFFLINE" : "NEURAL / EXPERIMENTAL") : "NEURAL / UNAVAILABLE")
+    const juce::String status = isTracking ? (cleanLevel > 0
+        ? "TRACK / CLEAN " + juce::String(cleanLevel) + "%" : "TRACK / 0ms DRY MIC") : neuralSelected ? (modelAvailable ? (offlineMode ? "NEURAL / OFFLINE" : "NEURAL / EXPERIMENTAL") : "NEURAL / UNAVAILABLE")
                                         : (modelAvailable ? "CLASSICAL / AI READY" : "CLASSICAL / DSP ONLY");
     g.drawText(status, 41, 2, 174, 22, juce::Justification::centredLeft, false);
 }
@@ -123,7 +127,10 @@ void HeaderBar::paint(juce::Graphics& g)
     }
     g.setColour(overloadVisible ? Theme::text : Theme::textDim.withAlpha(0.55f));
     g.setFont(Theme::mono(12.3f));
-    g.drawText(overloadVisible ? "OVER" : "PEAK", indicator, juce::Justification::centred, false);
+    const auto indicatorText = overloadVisible ? juce::String("OVER")
+        : trackingClean ? "GR " + juce::String(trackReductionRounded)
+        : juce::String("PEAK");
+    g.drawText(indicatorText, indicator, juce::Justification::centred, false);
 }
 
 void HeaderBar::resized()
@@ -151,20 +158,26 @@ void HeaderBar::refresh(bool active)
     lastOverZeroBlocks = over;
     const bool visible = overloadHold > 0;
     if (overloadVisible != visible) { overloadVisible = visible; repaint(); }
+    const bool clean = processor.isTrackingMode() &&
+        processor.apvts.getRawParameterValue("trackClean")->load() > 0.5f;
+    const int reduction = juce::jlimit(0, 99, juce::roundToInt(
+        processor.trackReductionDb.load(std::memory_order_relaxed)));
+    if (clean != trackingClean || (clean && reduction != trackReductionRounded)) {
+        trackingClean = clean;
+        trackReductionRounded = reduction;
+        repaint();
+    }
     const bool modelActive = processor.isNeuralRunning();
     if (modelActive != lastModelActive) { lastModelActive = modelActive; repaint(); }
     const auto isStereo = processor.apvts.getRawParameterValue("channelMode")->load() > 0.5f;
     const auto isBypassed = processor.apvts.getRawParameterValue("bypass")->load() > 0.5f
                          || processor.hostBypassActive.load(std::memory_order_relaxed);
     const bool selected = processor.apvts.getRawParameterValue("engineMode")->load() > 0.5f;
-    // Disable only entering unavailable Neural, never leaving it.
+    // Disable only *entering* an unavailable neural mode, never exiting one.
     engine.setEnabled(processor.hasNeuralBackend() || selected || processor.isTrackingMode());
-    // A saved StemgenRT selection must not show AI READY when the model
-    // is missing or the host runs at an incompatible sample rate.
-    const bool selectedModelAvailable = processor.hasNeuralBackend()
-        && (!selected || processor.isNeuralRunning());
-    engine.updateState(selected, selectedModelAvailable, isBypassed,
-                       processor.isOfflineNeural(), processor.isTrackingMode());
+    engine.updateState(selected, processor.hasNeuralBackend(), isBypassed,
+                       processor.isOfflineNeural(), processor.isTrackingMode(),
+                       static_cast<int>(processor.apvts.getRawParameterValue("trackClean")->load()));
     mode.setCaption(isStereo ? "Stereo" : "Mono");
     mode.setAccentEnabled(isStereo && active && !isBypassed);
     bypass.setOutlineEnabled(isBypassed);

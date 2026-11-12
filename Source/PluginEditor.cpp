@@ -144,8 +144,20 @@ void SkellSeparatorAudioProcessorEditor::showMenu()
     popup.addSectionHeader("SKELL SEPARATOR  /  TRACK RESEARCH");
     popup.addItem(1, "Reset All");
     popup.addItem(2, "Copy Settings to Clipboard");
-    popup.addItem(4, "LIVE TRACK MONITOR / 0 plugin samples (NO separation)", true,
-                  processor.isTrackingMode());
+    const bool tracking = processor.isTrackingMode();
+    const auto cleanPercent = static_cast<int>(processor.apvts.getRawParameterValue("trackClean")->load());
+    popup.addItem(4, "Track / DRY — zero added latency", true, tracking && cleanPercent == 0);
+    popup.addItem(5, "Track / CLEAN — zero added latency, expander", true, tracking && cleanPercent > 0);
+    popup.addItem(6, "Exit Track / return to separation", tracking);
+    juce::PopupMenu cleanMenu;
+    for (const int amount : { 0, 25, 50, 75, 100 })
+        cleanMenu.addItem(500 + amount, juce::String(amount) + "%", true, cleanPercent == amount);
+    popup.addSubMenu("Live Clean Amount", cleanMenu);
+    juce::PopupMenu tailsMenu;
+    const auto tailsPercent = static_cast<int>(processor.apvts.getRawParameterValue("trackTails")->load());
+    for (const int amount : { 0, 25, 35, 50, 75, 100 })
+        tailsMenu.addItem(700 + amount, juce::String(amount) + "%", true, tailsPercent == amount);
+    popup.addSubMenu("Tail Suppression (between phrases)", tailsMenu);
     popup.addItem(3, "Input Mono Sum", true,
         processor.apvts.getRawParameterValue("channelMode")->load() < 0.5f);
     popup.addSeparator();
@@ -180,7 +192,6 @@ void SkellSeparatorAudioProcessorEditor::showMenu()
     popup.addSubMenu("Scale", scale);
     popup.addSeparator();
     popup.addItem(50, "About / Model Status");
-    popup.addItem(51, "Help / Show Tutorial");
     juce::Component::SafePointer<SkellSeparatorAudioProcessorEditor> safe(this);
     popup.showMenuAsync(juce::PopupMenu::Options().withTargetComponent(&header),
         [safe](int result)
@@ -188,8 +199,7 @@ void SkellSeparatorAudioProcessorEditor::showMenu()
             if (safe == nullptr) return;
             auto& editor = *safe.getComponent();
             auto& p = editor.processor;
-            if (result == 51) editor.showGuidedTour(false);
-            else if (result == 1) p.resetAllParameters();
+            if (result == 1) p.resetAllParameters();
             else if (result == 2)
             {
                 juce::String out("Skell Separator settings\n");
@@ -197,11 +207,40 @@ void SkellSeparatorAudioProcessorEditor::showMenu()
                 for (const auto& id : { "ambienceGain", "voiceGain", "reverbGain",
                                         "ambienceSolo", "voiceSolo", "reverbSolo",
                                         "ambienceMute", "voiceMute", "reverbMute",
-                                        "channelMode", "bypass", "quality", "engineMode", "neuralStrength", "stemgenResearch" })
+                                        "channelMode", "bypass", "quality", "engineMode", "neuralStrength", "stemgenResearch",
+                                        "trackClean", "trackTails" })
                     out << id << " = " << p.apvts.getRawParameterValue(id)->load() << "\n";
                 juce::SystemClipboard::copyTextToClipboard(out);
             }
-            else if (result == 4) p.setTrackingMode(!p.isTrackingMode());
+            else if (result == 4 || result == 5)
+            {
+                const float desired = result == 4 ? 0.f
+                    : juce::jmax(50.f, p.apvts.getRawParameterValue("trackClean")->load());
+                if (auto* prm = p.apvts.getParameter("trackClean")) {
+                    prm->beginChangeGesture();
+                    prm->setValueNotifyingHost(prm->convertTo0to1(desired));
+                    prm->endChangeGesture();
+                }
+                p.setTrackingMode(true);
+            }
+            else if (result == 6) p.setTrackingMode(false);
+            else if (result >= 500 && result <= 600 && (result % 25 == 0))
+            {
+                if (auto* prm = p.apvts.getParameter("trackClean")) {
+                    prm->beginChangeGesture();
+                    prm->setValueNotifyingHost(prm->convertTo0to1(static_cast<float>(result - 500)));
+                    prm->endChangeGesture();
+                }
+            }
+            else if (result >= 700 && result <= 800 &&
+                     (result == 735 || (result % 25 == 0)))
+            {
+                if (auto* prm = p.apvts.getParameter("trackTails")) {
+                    prm->beginChangeGesture();
+                    prm->setValueNotifyingHost(prm->convertTo0to1(static_cast<float>(result - 700)));
+                    prm->endChangeGesture();
+                }
+            }
             else if (result == 3)
             {
                 if (auto* prm = p.apvts.getParameter("channelMode"))
@@ -246,12 +285,15 @@ void SkellSeparatorAudioProcessorEditor::showMenu()
                 details << p.neuralBackendName() << "\n"
                         << "Selected: " << (active ? "EXPERIMENTAL NEURAL" : "Classical") << "\n"
                         << "Strength: " << juce::String(p.apvts.getRawParameterValue("neuralStrength")->load() * 100.0f, 0) << "%\n"
-                        << "Backend available: " << (loaded ? "Yes" : "No (Tiny 48k / StemgenRT 44.1k + model)") << "\n"
+                        << "Backend available: " << (loaded ? "Yes" : "No (Tiny: 48k / StemgenRT: 44.1k + model)") << "\n"
                         << "Inference: " << (p.isOfflineNeural() ? "deterministic offline" : "asynchronous live") << "\n"
-                        << "Tiny Vocal is synthetic-trained; StemgenRT weights are external/noncommercial.\n"
+                        << "Tiny Vocal: synthetic-trained only. StemgenRT: external noncommercial weights.\n"
                         << "Not validated on licensed singing/music recordings.\n"
                         << "Reverb remains a classical estimate.\n"
-                        << "Tracking monitor: " << (p.isTrackingMode() ? "ON: zero sample dry mic, no separation" : "OFF") << "\n"
+                        << "Tracking monitor: " << (p.isTrackingMode() ? "ON (0 added samples)" : "OFF") << "\n"
+                        << "Track Clean: " << juce::String(p.apvts.getRawParameterValue("trackClean")->load(), 0) << "%\n"
+                        << "Track Tails: " << juce::String(p.apvts.getRawParameterValue("trackTails")->load(), 0) << "%\n"
+                        << "Live cleanup is a zero-lookahead expander, NOT neural denoising or true dereverb.\n"
                         << "Host latency: " << p.getLatencySamples() << " samples.\n"
                         << "Model mean: " << juce::String(p.getNeuralWorkerMeanUs(), 1) << " us/frame\n"
                         << "Model maximum: " << juce::String(static_cast<juce::int64>(p.getNeuralWorkerMaxUs())) << " us/frame\n"

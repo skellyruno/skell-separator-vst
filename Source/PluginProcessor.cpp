@@ -25,6 +25,8 @@ SkellSeparatorAudioProcessor::SkellSeparatorAudioProcessor()
     engineModeParam = apvts.getRawParameterValue("engineMode");
     neuralStrengthParam = apvts.getRawParameterValue("neuralStrength");
     stemgenResearchParam = apvts.getRawParameterValue("stemgenResearch");
+    trackCleanParam = apvts.getRawParameterValue("trackClean");
+    trackTailsParam = apvts.getRawParameterValue("trackTails");
 }
 
 juce::AudioProcessorValueTreeState::ParameterLayout SkellSeparatorAudioProcessor::makeLayout()
@@ -58,11 +60,22 @@ juce::AudioProcessorValueTreeState::ParameterLayout SkellSeparatorAudioProcessor
     layout.add(std::make_unique<juce::AudioParameterFloat>(
         juce::ParameterID { "neuralStrength", 1 }, "Neural Strength",
         juce::NormalisableRange<float>(0.0f, 1.0f, 0.01f), 0.65f));
+    // Separate live cleanup controls do not change the old engine IDs or
+    // restore semantics. Clean 0% keeps legacy Track Monitor bit-exact.
+    layout.add(std::make_unique<juce::AudioParameterFloat>(
+        juce::ParameterID { "trackClean", 1 }, "Track Clean",
+        juce::NormalisableRange<float>(0.0f, 100.0f, 1.0f), 0.0f));
+    layout.add(std::make_unique<juce::AudioParameterFloat>(
+        juce::ParameterID { "trackTails", 1 }, "Track Tails",
+        juce::NormalisableRange<float>(0.0f, 100.0f, 1.0f), 35.0f));
     return layout;
 }
 
 void SkellSeparatorAudioProcessor::prepareToPlay(double sampleRate, int)
 {
+    liveCleanup.prepare(sampleRate);
+    wasTrackingAudio = false;
+    trackReductionDb.store(0.f, std::memory_order_relaxed);
     spectra.reset();
     inputActivity.store(0.0f, std::memory_order_relaxed);
     overZeroBlocks.store(0, std::memory_order_relaxed);
@@ -166,6 +179,48 @@ void SkellSeparatorAudioProcessor::processAudio(juce::AudioBuffer<float>& b, boo
     }
     const bool tracking = isTrackingMode();
     const bool bypassRequested = hostBypassed || bypassParam->load() > 0.5f;
+    if (tracking) {
+        if (!wasTrackingAudio) liveCleanup.reset();
+        wasTrackingAudio = true;
+        // Tracking does not run expensive FFT, classical stem mixing, or model
+        // inference. The mic is processed at the current sample index: 0 PDC.
+        auto* l = b.getWritePointer(0);
+        auto* r = channels == 2 ? b.getWritePointer(1) : nullptr;
+        const float clean = bypassRequested ? 0.f :
+            std::clamp(trackCleanParam->load(std::memory_order_relaxed) * 0.01f, 0.f, 1.f);
+        const float tails = std::clamp(trackTailsParam->load(std::memory_order_relaxed) * 0.01f, 0.f, 1.f);
+        liveCleanup.setControls(clean, tails);
+        if (neural.active() && n > 0)
+            neural.submitSample(0.f, 0.f, neuralSampleIndex, false);
+        float peak = 0.f;
+        bool overZero = false;
+        for (int i = 0; i < n; ++i) {
+            const auto input = skell::TrackingMonitor::sample(l[i], r ? r[i] : l[i]);
+            const auto output = liveCleanup.process(input[0], input[1]);
+            l[i] = output[0];
+            if (r) r[i] = output[1];
+            peak = std::max(peak, std::max(std::abs(input[0]), std::abs(input[1])));
+            overZero |= std::abs(output[0]) > 1.f || (r && std::abs(output[1]) > 1.f);
+        }
+        for (int ch = 2; ch < b.getNumChannels(); ++ch) b.clear(ch, 0, n);
+        trackReductionDb.store(liveCleanup.gainReductionDb(), std::memory_order_relaxed);
+        if (overZero) overZeroBlocks.fetch_add(1, std::memory_order_relaxed);
+        audioBlockCounter.fetch_add(1, std::memory_order_relaxed);
+        inputActivity.store(0.80f * inputActivity.load(std::memory_order_relaxed)
+                            + 0.20f * juce::jlimit(0.f, 1.f, peak * 2.f),
+                            std::memory_order_relaxed);
+        neuralSampleIndex += n;
+        return;
+    }
+    if (wasTrackingAudio) {
+        // Re-prime at the next audio block after returning to mix. GUI never
+        // resets DSP state concurrently with the host audio thread.
+        separator.reset();
+        alignment.reset();
+        neuralBlend.reset();
+        wasTrackingAudio = false;
+        trackReductionDb.store(0.f, std::memory_order_relaxed);
+    }
     mixer.setTargets(gains, solos, mutes, bypassRequested);
     // Read automation once per callback, just like gain/Solo/Mute. When in
     // Classical or Bypass modes, the neural worker must not compute unused

@@ -8,6 +8,7 @@
 #include "dsp/StreamingNeural.h"
 #include "dsp/StemgenRTBridge.h"
 #include "dsp/TrackingMonitor.h"
+#include "dsp/LiveVocalCleanup.h"
 #include "dsp/LatencyAlignedStems.h"
 #include "dsp/NeuralVoiceBlend.h"
 
@@ -44,6 +45,7 @@ public:
     // Counts callback blocks with floating-point output above 0 dBFS.
     // Diagnostic only: never silently clamp user-selected boosted gains.
     std::atomic<std::uint64_t> overZeroBlocks { 0 };
+    std::atomic<float> trackReductionDb { 0.0f };
     static juce::AudioProcessorValueTreeState::ParameterLayout makeLayout();
     void resetAllParameters();
     int availableNeuralMode() const noexcept { return preparedNeuralMode.load(std::memory_order_relaxed); }
@@ -89,6 +91,8 @@ private:
     Separator separator;
     LatencyAlignedStems alignment;
     skell::StreamingNeural neural;
+    skell::LiveVocalCleanup liveCleanup;
+    bool wasTrackingAudio = false;
     std::atomic<int> preparedNeuralMode { 0 }; // 0 off, 1 tiny/RNNoise, 2 StemgenRT research
     std::int64_t neuralSampleIndex = 0;
     skell::NeuralVoiceBlend neuralBlend;
@@ -101,6 +105,8 @@ private:
     std::atomic<float>* engineModeParam = nullptr;
     std::atomic<float>* neuralStrengthParam = nullptr;
     std::atomic<float>* stemgenResearchParam = nullptr;
+    std::atomic<float>* trackCleanParam = nullptr;
+    std::atomic<float>* trackTailsParam = nullptr;
     juce::SmoothedValue<float, juce::ValueSmoothingTypes::Linear> strengthSmoothing;
     std::atomic<bool> trackingMode { false };
     std::atomic<int> uiScale { 75 }, presetIndex { 0 };

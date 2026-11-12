@@ -13,9 +13,10 @@ class EngineBadge final : public juce::Button
 public:
     EngineBadge();
     void paintButton(juce::Graphics&, bool hovered, bool pressed) override;
-    void updateState(bool selected, bool available, bool bypassed, bool offline, bool tracking);
+    void updateState(bool selected, bool available, bool bypassed, bool offline, bool tracking, int cleanPercent);
 private:
     bool neuralSelected = false, modelAvailable = false, isBypassed = false, offlineMode = false, isTracking = false;
+    int cleanLevel = 0;
 };
 
 class HeaderBar final : public juce::Component
@@ -38,4 +39,6 @@ private:
     bool overloadVisible = false;
     int overloadHold = 0; // 45 editor ticks ~ one second
     std::uint64_t lastOverZeroBlocks = 0;
+    int trackReductionRounded = 0;
+    bool trackingClean = false;
 };

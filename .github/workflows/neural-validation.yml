@@ -46,6 +46,13 @@ jobs:
         run: bash tests/run_neural_blend.sh
       - name: Validate transparent zero-latency vocal tracking monitor
         run: bash tests/run_tracking_monitor.sh
+      - name: Zero-lookahead adaptive vocal cleanup regression
+        run: bash tests/run_live_cleanup.sh
+      - name: Live vocal cleanup with Clang ASan/UBSan
+        env:
+          CXX: clang++
+          SKELL_SANITIZE: "1"
+        run: bash tests/run_live_cleanup.sh
       - name: Compact UI geometry / resize / defaults contract
         run: python tests/ui_layout_contract.py
       - name: Benchmark metric self-test

@@ -67,5 +67,6 @@ assert 'processor.availableNeuralMode() == 2 ? 1.0f : 0.0f' in header
 assert 'engine.setEnabled(processor.hasNeuralBackend() || selected || processor.isTrackingMode())' in header
 assert 'if (processor.isTrackingMode()) { processor.setTrackingMode(false); return; }' in header
 assert 'TRACK / 0ms DRY MIC' in header
-assert 'LIVE TRACK MONITOR / 0 plugin samples (NO separation)' in editor
+assert 'Track / CLEAN' in editor and 'Live Clean Amount' in editor
+assert 'TRACK / CLEAN ' in header
 print("Static JUCE geometry/default/resize/engine-exit contract passed at 75%, 100%, 150% (not a render test)")

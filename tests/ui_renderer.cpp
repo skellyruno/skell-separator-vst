@@ -34,6 +34,7 @@ int main(int argc, char** argv) {
             {"compact-voice-solo", 785, 448, 0, 2, false},
             {"compact-neural", 785, 448, 0, 3, false},
             {"compact-track-monitor", 785, 448, 0, 5, false},
+            {"compact-track-clean", 785, 448, 0, 6, false},
             {"standard-classical", 1047, 597, 0, 0, false},
             {"large-classical", 1571, 896, 0, 0, false},
             {"compact-guided-tour", 785, 448, 0, 4, false},
@@ -41,8 +42,9 @@ int main(int argc, char** argv) {
         };
         options.configure = [&](const skellcore::ui::headless::Scene& scene) {
             editor.dismissTourForScreenshot();
-            processor.setTrackingMode(scene.mode == 5);
-            if (processor.getLatencySamples() != (scene.mode == 5 ? 0 : 2880))
+            processor.setTrackingMode(scene.mode == 5 || scene.mode == 6);
+            setParameter(processor.apvts, "trackClean", scene.mode == 6 ? 55.0f : 0.0f);
+            if (processor.getLatencySamples() != ((scene.mode == 5 || scene.mode == 6) ? 0 : 2880))
                 ++failures;
             processor.usePreset(0);
             setParameter(processor.apvts, "bypass", scene.mode == 1 ? 1.0f : 0.0f);
@@ -79,6 +81,7 @@ int main(int argc, char** argv) {
             {"compact-classical", "compact-voice-solo"},
             {"compact-classical", "compact-neural"},
             {"compact-classical", "compact-track-monitor"},
+            {"compact-track-monitor", "compact-track-clean"},
             {"compact-classical", "compact-guided-tour"},
             {"large-classical", "large-guided-tour"}
         };
