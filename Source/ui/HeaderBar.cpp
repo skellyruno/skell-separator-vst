@@ -3,7 +3,7 @@
 EngineBadge::EngineBadge() : juce::Button("Processing engine")
 {
     setMouseCursor(juce::MouseCursor::PointingHandCursor);
-    setTooltip("Switch DSP / experimental neural. Neural requires a 48 kHz host sample rate.");
+    setTooltip("Switch DSP / selected neural model. Tiny: 48k, StemgenRT research: 44.1k.");
 }
 
 void EngineBadge::updateState(bool selected, bool available, bool bypassed, bool offline)
@@ -17,7 +17,7 @@ void EngineBadge::updateState(bool selected, bool available, bool bypassed, bool
         setTooltip(neuralSelected ? (modelAvailable ? (offlineMode
             ? "Neural experimental | deterministic offline render | fixed 2880 samples"
             : "Neural experimental | asynchronous live inference | fixed 2880 samples")
-            : "Neural model unavailable: 48 kHz host rate required")
+            : "Neural model unavailable for this host rate or not installed")
             : "Classical separation | click to switch to experimental neural");
         repaint();
     }
@@ -75,13 +75,20 @@ HeaderBar::HeaderBar(SkellSeparatorAudioProcessor& p) : processor(p)
     engine.onClick = [this]
     {
         const bool selected = processor.apvts.getRawParameterValue("engineMode")->load() > 0.5f;
-        // Allow exiting Neural after reopening at an unsupported sample rate.
-        if (!selected && !processor.hasNeuralBackend()) return;
+        // Preserve saved sessions; allow returning to Classical without a model.
+        if (!selected && processor.availableNeuralMode() == 0) return;
         if (auto* param = processor.apvts.getParameter("engineMode"))
         {
             param->beginChangeGesture();
-            param->setValueNotifyingHost(param->convertTo0to1(selected ? 0.0f : 1.0f));
+            param->setValueNotifyingHost(selected ? 0.0f : 1.0f);
             param->endChangeGesture();
+            if (!selected) {
+                if (auto* research = processor.apvts.getParameter("stemgenResearch")) {
+                    research->beginChangeGesture();
+                    research->setValueNotifyingHost(processor.availableNeuralMode() == 2 ? 1.0f : 0.0f);
+                    research->endChangeGesture();
+                }
+            }
         }
     };
     previous.onClick = [this] { processor.usePreset(processor.getPresetIndex() - 1); };

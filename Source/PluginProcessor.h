@@ -6,6 +6,7 @@
 #include "dsp/StemMixer.h"
 #include "dsp/SpectralAnalyzer.h"
 #include "dsp/StreamingNeural.h"
+#include "dsp/StemgenRTBridge.h"
 #include "dsp/LatencyAlignedStems.h"
 #include "dsp/NeuralVoiceBlend.h"
 
@@ -44,20 +45,26 @@ public:
     std::atomic<std::uint64_t> overZeroBlocks { 0 };
     static juce::AudioProcessorValueTreeState::ParameterLayout makeLayout();
     void resetAllParameters();
+    int availableNeuralMode() const noexcept { return preparedNeuralMode.load(std::memory_order_relaxed); }
     bool isNeuralRunning() const noexcept {
-        return neural.active() && engineModeParam != nullptr &&
-               engineModeParam->load(std::memory_order_relaxed) > 0.5f;
+        return neural.active() && engineModeParam != nullptr && availableNeuralMode() != 0 &&
+            engineModeParam->load(std::memory_order_relaxed) > 0.5f &&
+            (availableNeuralMode() == ((stemgenResearchParam != nullptr &&
+               stemgenResearchParam->load(std::memory_order_relaxed) > 0.5f) ? 2 : 1));
     }
     bool hasNeuralBackend() const noexcept { return neural.active(); }
     bool isOfflineNeural() const noexcept { return neural.active() && neural.rendersOffline(); }
     const char* neuralBackendName() const noexcept {
+        if (availableNeuralMode() == 2)
+            return "StemgenRT independent vocals — externally licensed ONNX research model";
+        if (availableNeuralMode() == 1) {
 #if defined(SKELL_WITH_TINY_VOCAL) && SKELL_WITH_TINY_VOCAL
-        return "Tiny Vocal Mask — synthetic-trained experimental model";
+            return "Tiny Vocal Mask — synthetic-trained experimental model";
 #elif defined(SKELL_WITH_RNNOISE) && SKELL_WITH_RNNOISE
-        return "RNNoise — speech denoiser";
-#else
-        return "No neural backend compiled";
+            return "RNNoise — speech denoiser";
 #endif
+        }
+        return "Neural model unavailable at this sample rate or not installed";
     }
     std::uint64_t getNeuralMissedFrames() const noexcept { return neural.missedDeadlines(); }
     std::uint64_t getNeuralQueueDropped() const noexcept { return neural.droppedFrames(); }
@@ -77,6 +84,7 @@ private:
     Separator separator;
     LatencyAlignedStems alignment;
     skell::StreamingNeural neural;
+    std::atomic<int> preparedNeuralMode { 0 }; // 0 off, 1 tiny/RNNoise, 2 StemgenRT research
     std::int64_t neuralSampleIndex = 0;
     skell::NeuralVoiceBlend neuralBlend;
     StemMixer mixer;
@@ -87,6 +95,7 @@ private:
     std::atomic<float>* qualityParam = nullptr;
     std::atomic<float>* engineModeParam = nullptr;
     std::atomic<float>* neuralStrengthParam = nullptr;
+    std::atomic<float>* stemgenResearchParam = nullptr;
     juce::SmoothedValue<float, juce::ValueSmoothingTypes::Linear> strengthSmoothing;
     std::atomic<int> uiScale { 75 }, presetIndex { 0 };
     std::atomic<bool> circularKnobs { false };

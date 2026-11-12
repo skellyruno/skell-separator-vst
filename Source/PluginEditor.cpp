@@ -154,9 +154,13 @@ void SkellSeparatorAudioProcessorEditor::showMenu()
     quality.addItem(12, "Strong (more suppression)", true, qualityIndex == 2);
     popup.addSubMenu("Separation Quality", quality);
     juce::PopupMenu engines;
-    const bool experimental = processor.apvts.getRawParameterValue("engineMode")->load() > 0.5f;
-    engines.addItem(60, "Classical (worker idle)", true, !experimental);
-    engines.addItem(61, "Neural (experimental, 48 kHz only)", processor.hasNeuralBackend(), experimental);
+    const bool engineSelected = processor.apvts.getRawParameterValue("engineMode")->load() > 0.5f;
+    const bool wantsResearch = processor.apvts.getRawParameterValue("stemgenResearch")->load() > 0.5f;
+    engines.addItem(60, "Classical (worker idle)", true, !engineSelected);
+    engines.addItem(61, "Tiny Vocal (experimental, 48 kHz)", processor.availableNeuralMode() == 1,
+                    engineSelected && !wantsResearch);
+    engines.addItem(62, "StemgenRT (noncommercial research, 44.1 kHz)", processor.availableNeuralMode() == 2,
+                    engineSelected && wantsResearch);
     popup.addSubMenu("Processing Engine", engines);
     juce::PopupMenu strengthMenu;
     const float currentStrength = processor.apvts.getRawParameterValue("neuralStrength")->load();
@@ -190,7 +194,7 @@ void SkellSeparatorAudioProcessorEditor::showMenu()
                 for (const auto& id : { "ambienceGain", "voiceGain", "reverbGain",
                                         "ambienceSolo", "voiceSolo", "reverbSolo",
                                         "ambienceMute", "voiceMute", "reverbMute",
-                                        "channelMode", "bypass", "quality", "engineMode", "neuralStrength" })
+                                        "channelMode", "bypass", "quality", "engineMode", "neuralStrength", "stemgenResearch" })
                     out << id << " = " << p.apvts.getRawParameterValue(id)->load() << "\n";
                 juce::SystemClipboard::copyTextToClipboard(out);
             }
@@ -204,13 +208,18 @@ void SkellSeparatorAudioProcessorEditor::showMenu()
                 }
             }
             else if (result >= 10 && result <= 12) editor.chooseQuality(result - 10);
-            else if (result == 60 || result == 61)
+            else if (result >= 60 && result <= 62)
             {
                 if (auto* prm = p.apvts.getParameter("engineMode"))
                 {
                     prm->beginChangeGesture();
-                    prm->setValueNotifyingHost(prm->convertTo0to1(result == 61 ? 1.0f : 0.0f));
+                    prm->setValueNotifyingHost(result == 60 ? 0.0f : 1.0f);
                     prm->endChangeGesture();
+                }
+                if (auto* mode = p.apvts.getParameter("stemgenResearch")) {
+                    mode->beginChangeGesture();
+                    mode->setValueNotifyingHost(result == 62 ? 1.0f : 0.0f);
+                    mode->endChangeGesture();
                 }
             }
             else if (result >= 325 && result <= 400)
@@ -233,9 +242,9 @@ void SkellSeparatorAudioProcessorEditor::showMenu()
                 details << p.neuralBackendName() << "\n"
                         << "Selected: " << (active ? "EXPERIMENTAL NEURAL" : "Classical") << "\n"
                         << "Strength: " << juce::String(p.apvts.getRawParameterValue("neuralStrength")->load() * 100.0f, 0) << "%\n"
-                        << "Backend available: " << (loaded ? "Yes" : "No (requires 48 kHz)") << "\n"
+                        << "Backend available: " << (loaded ? "Yes" : "No (Tiny 48k / StemgenRT 44.1k + model)") << "\n"
                         << "Inference: " << (p.isOfflineNeural() ? "deterministic offline" : "asynchronous live") << "\n"
-                        << "Tiny Vocal weights were trained ONLY on original procedural mixtures.\n"
+                        << "Tiny Vocal is synthetic-trained; StemgenRT weights are external/noncommercial.\n"
                         << "Not validated on licensed singing/music recordings.\n"
                         << "Reverb remains a classical estimate.\n"
                         << "Host latency: " << p.getLatencySamples() << " samples.\n"

@@ -1,0 +1,54 @@
+name: StemgenRT Research Adapter Validation
+on:
+  push:
+    branches: [research/stemgenrt-vocal-backend]
+  pull_request:
+    paths:
+      - 'Source/**'
+      - 'tests/**'
+      - 'CMakeLists.txt'
+      - '.github/workflows/stemgen-research.yml'
+  workflow_dispatch:
+
+jobs:
+  portable-contract:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Bridge, transport, scheduling and sanitizer regressions
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash tests/run_stemgen_bridge.sh
+          bash tests/run_stemgen_transport.sh
+          SKELL_SANITIZE=1 SKELL_TEST_BINARY=/tmp/skell-stemgen-sanitized bash tests/run_stemgen_bridge.sh
+          SKELL_SANITIZE=1 SKELL_TEST_BINARY=/tmp/skell-stemgen-transport-sanitized bash tests/run_stemgen_transport.sh
+          bash tests/run_neural_contract.sh
+          bash tests/run_neural_blend.sh
+          python3 -m py_compile tools/install_stemgenrt_model.py
+
+  windows-onnx-compile:
+    runs-on: windows-2022
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - name: Obtain official ONNX Runtime CPU SDK (build-only; no weights)
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          Invoke-WebRequest -Uri 'https://github.com/microsoft/onnxruntime/releases/download/v1.26.0/onnxruntime-win-x64-1.26.0.zip' -OutFile ort-sdk.zip
+          Expand-Archive -Path ort-sdk.zip -DestinationPath ort-sdk
+          if (!(Test-Path 'ort-sdk/onnxruntime-win-x64-1.26.0/include/onnxruntime_cxx_api.h')) { throw 'Missing C++ API header' }
+      - name: Configure research build (no noncommercial model weights)
+        shell: pwsh
+        run: |
+          cmake -S . -B build-stemgen -A x64 -DSKELL_ENABLE_STEMGENRT=ON -DONNXRUNTIME_ROOT="$PWD/ort-sdk/onnxruntime-win-x64-1.26.0"
+      - name: Compile VST3 and Standalone with optional ONNX adapter
+        shell: pwsh
+        run: cmake --build build-stemgen --config Release --parallel 2
+      - name: Verify Windows VST3 exists (compile only; not a distributable package)
+        shell: pwsh
+        run: |
+          $plugin = Get-ChildItem build-stemgen -Recurse -Directory -Filter '*.vst3' | Select-Object -First 1
+          if (!$plugin) { throw 'Windows VST3 not generated' }
+          Write-Host "Research VST3 compiled: $($plugin.FullName)"

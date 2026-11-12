@@ -24,6 +24,7 @@ SkellSeparatorAudioProcessor::SkellSeparatorAudioProcessor()
     qualityParam = apvts.getRawParameterValue("quality");
     engineModeParam = apvts.getRawParameterValue("engineMode");
     neuralStrengthParam = apvts.getRawParameterValue("neuralStrength");
+    stemgenResearchParam = apvts.getRawParameterValue("stemgenResearch");
 }
 
 juce::AudioProcessorValueTreeState::ParameterLayout SkellSeparatorAudioProcessor::makeLayout()
@@ -52,6 +53,8 @@ juce::AudioProcessorValueTreeState::ParameterLayout SkellSeparatorAudioProcessor
     layout.add(std::make_unique<juce::AudioParameterChoice>(
         juce::ParameterID { "engineMode", 1 }, "Processing Engine",
         juce::StringArray { "Classical", "Neural Experimental" }, 0));
+    layout.add(std::make_unique<juce::AudioParameterBool>(
+        juce::ParameterID { "stemgenResearch", 1 }, "StemgenRT Research Backend", false));
     layout.add(std::make_unique<juce::AudioParameterFloat>(
         juce::ParameterID { "neuralStrength", 1 }, "Neural Strength",
         juce::NormalisableRange<float>(0.0f, 1.0f, 0.01f), 0.65f));
@@ -74,17 +77,28 @@ void SkellSeparatorAudioProcessor::prepareToPlay(double sampleRate, int)
     // the host callback. This model's STFT/training is explicitly 48 kHz.
     // When both are built, original Tiny Vocal takes precedence over RNNoise.
     std::unique_ptr<skell::NeuralFrameBackend> backend;
+    int backendMode = 0;
     if (std::abs(sampleRate - 48000.0) < 0.5) {
 #if defined(SKELL_WITH_TINY_VOCAL) && SKELL_WITH_TINY_VOCAL
         backend = skell::createTinyVocalBackend();
 #elif defined(SKELL_WITH_RNNOISE) && SKELL_WITH_RNNOISE
         backend = skell::createRNNoiseBackend();
 #endif
+        if (backend) backendMode = 1;
     }
+#if defined(SKELL_WITH_STEMGENRT) && SKELL_WITH_STEMGENRT
+    if (std::abs(sampleRate - skell::stemgenSampleRate) < 0.5) {
+        const auto file = juce::File::getSpecialLocation(juce::File::userApplicationDataDirectory)
+            .getChildFile("Skell/Separator/Models/independent.onnx");
+        backend = skell::createStemgenRTBackend(file.getFullPathName().toRawUTF8());
+        if (backend) backendMode = 2;
+    }
+#endif
     // Hosts normally set the non-realtime flag before prepareToPlay. In an
     // offline bounce, deterministic inline inference is safe and avoids
     // asynchronous worker starvation. Live playback remains lock-free.
-    neural.start(std::move(backend), isNonRealtime());
+    const bool started = neural.start(std::move(backend), isNonRealtime());
+    preparedNeuralMode.store(started ? backendMode : 0, std::memory_order_release);
     mixer.prepare(sampleRate);
     // Host state may be restored before prepare. Honor the saved settings on
     // the very first processed sample (especially a bypassed session).
@@ -109,6 +123,7 @@ void SkellSeparatorAudioProcessor::prepareToPlay(double sampleRate, int)
 void SkellSeparatorAudioProcessor::releaseResources()
 {
     neural.stop();
+    preparedNeuralMode.store(0, std::memory_order_release);
 }
 
 bool SkellSeparatorAudioProcessor::isBusesLayoutSupported(const BusesLayout& layout) const
@@ -155,8 +170,11 @@ void SkellSeparatorAudioProcessor::processAudio(juce::AudioBuffer<float>& b, boo
     // Classical or Bypass modes, the neural worker must not compute unused
     // masks; it will restart at a clean frame boundary after reactivation.
     const bool neuralEnabled = neural.active();
-    const bool neuralSelected = neuralEnabled && !bypassRequested
-                             && engineModeParam->load(std::memory_order_relaxed) > 0.5f;
+    const bool wantsResearch = stemgenResearchParam != nullptr &&
+        stemgenResearchParam->load(std::memory_order_relaxed) > 0.5f;
+    const bool neuralSelected = neuralEnabled && !bypassRequested &&
+        engineModeParam->load(std::memory_order_relaxed) > 0.5f &&
+        (availableNeuralMode() == (wantsResearch ? 2 : 1));
     strengthSmoothing.setTargetValue(neuralStrengthParam->load(std::memory_order_relaxed));
     const bool monoMode = modeParam->load() < 0.5f || channels == 1;
     monoBlend.setTargetValue(monoMode ? 1.0f : 0.0f);
@@ -202,7 +220,8 @@ void SkellSeparatorAudioProcessor::processAudio(juce::AudioBuffer<float>& b, boo
             // Conservative correction guard applies ONLY to synthetic-trained
             // TinyVocalNet, not the separately licensed RNNoise backend.
 #if defined(SKELL_WITH_TINY_VOCAL) && SKELL_WITH_TINY_VOCAL
-            neuralBlend.apply(stemSamples, available && neuralSelected, neuralVoice, true);
+            neuralBlend.apply(stemSamples, available && neuralSelected, neuralVoice,
+                              availableNeuralMode() == 1);
 #else
             neuralBlend.apply(stemSamples, available && neuralSelected, neuralVoice);
 #endif
