@@ -15,7 +15,7 @@ void EngineBadge::updateState(bool selected, bool available, bool bypassed, bool
         modelAvailable = available;
         isBypassed = bypassed;
         offlineMode = offline;
-        setTooltip(isTracking ? "TRACK: zero added plugin latency, direct clean mic monitor; no vocal separation"
+        setTooltip(isTracking ? "TRACK: zero added plugin latency, direct dry mic monitor; no vocal separation"
             : neuralSelected ? (modelAvailable ? (offlineMode
             ? "Neural experimental | deterministic offline render | fixed 2880 samples"
             : "Neural experimental | asynchronous live inference | fixed 2880 samples")
@@ -164,7 +164,7 @@ void HeaderBar::refresh(bool active)
     const bool selectedModelAvailable = processor.hasNeuralBackend()
         && (!selected || processor.isNeuralRunning());
     engine.updateState(selected, selectedModelAvailable, isBypassed,
-                       processor.isOfflineNeural());
+                       processor.isOfflineNeural(), processor.isTrackingMode());
     mode.setCaption(isStereo ? "Stereo" : "Mono");
     mode.setAccentEnabled(isStereo && active && !isBypassed);
     bypass.setOutlineEnabled(isBypassed);

@@ -48,7 +48,7 @@ public:
     void resetAllParameters();
     int availableNeuralMode() const noexcept { return preparedNeuralMode.load(std::memory_order_relaxed); }
     bool isNeuralRunning() const noexcept {
-        return neural.active() && engineModeParam != nullptr && availableNeuralMode() != 0 &&
+        return !isTrackingMode() && neural.active() && engineModeParam != nullptr && availableNeuralMode() != 0 &&
             engineModeParam->load(std::memory_order_relaxed) > 0.5f &&
             (availableNeuralMode() == ((stemgenResearchParam != nullptr &&
                stemgenResearchParam->load(std::memory_order_relaxed) > 0.5f) ? 2 : 1));
