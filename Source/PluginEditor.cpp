@@ -141,9 +141,11 @@ void SkellSeparatorAudioProcessorEditor::applyScale(int percent)
 void SkellSeparatorAudioProcessorEditor::showMenu()
 {
     juce::PopupMenu popup;
-    popup.addSectionHeader("SKELL SEPARATOR  /  1.13");
+    popup.addSectionHeader("SKELL SEPARATOR  /  TRACK RESEARCH");
     popup.addItem(1, "Reset All");
     popup.addItem(2, "Copy Settings to Clipboard");
+    popup.addItem(4, "LIVE TRACK MONITOR / 0 plugin samples (NO separation)", true,
+                  processor.isTrackingMode());
     popup.addItem(3, "Input Mono Sum", true,
         processor.apvts.getRawParameterValue("channelMode")->load() < 0.5f);
     popup.addSeparator();
@@ -191,6 +193,7 @@ void SkellSeparatorAudioProcessorEditor::showMenu()
             else if (result == 2)
             {
                 juce::String out("Skell Separator settings\n");
+                out << "trackingMode = " << (p.isTrackingMode() ? 1 : 0) << "\n";
                 for (const auto& id : { "ambienceGain", "voiceGain", "reverbGain",
                                         "ambienceSolo", "voiceSolo", "reverbSolo",
                                         "ambienceMute", "voiceMute", "reverbMute",
@@ -198,6 +201,7 @@ void SkellSeparatorAudioProcessorEditor::showMenu()
                     out << id << " = " << p.apvts.getRawParameterValue(id)->load() << "\n";
                 juce::SystemClipboard::copyTextToClipboard(out);
             }
+            else if (result == 4) p.setTrackingMode(!p.isTrackingMode());
             else if (result == 3)
             {
                 if (auto* prm = p.apvts.getParameter("channelMode"))
@@ -247,6 +251,7 @@ void SkellSeparatorAudioProcessorEditor::showMenu()
                         << "Tiny Vocal is synthetic-trained; StemgenRT weights are external/noncommercial.\n"
                         << "Not validated on licensed singing/music recordings.\n"
                         << "Reverb remains a classical estimate.\n"
+                        << "Tracking monitor: " << (p.isTrackingMode() ? "ON: zero sample dry mic, no separation" : "OFF") << "\n"
                         << "Host latency: " << p.getLatencySamples() << " samples.\n"
                         << "Model mean: " << juce::String(p.getNeuralWorkerMeanUs(), 1) << " us/frame\n"
                         << "Model maximum: " << juce::String(static_cast<juce::int64>(p.getNeuralWorkerMaxUs())) << " us/frame\n"

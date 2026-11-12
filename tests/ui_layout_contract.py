@@ -64,5 +64,8 @@ assert 'if (!selected && processor.availableNeuralMode() == 0) return;' in heade
 assert 'juce::StringArray { "Classical", "Neural Experimental" }, 0)' in processor
 assert 'stemgenResearch' in processor
 assert 'processor.availableNeuralMode() == 2 ? 1.0f : 0.0f' in header
-assert 'engine.setEnabled(processor.hasNeuralBackend() || selected)' in header
+assert 'engine.setEnabled(processor.hasNeuralBackend() || selected || processor.isTrackingMode())' in header
+assert 'if (processor.isTrackingMode()) { processor.setTrackingMode(false); return; }' in header
+assert 'TRACK / 0ms DRY MIC' in header
+assert 'LIVE TRACK MONITOR / 0 plugin samples (NO separation)' in editor
 print("Static JUCE geometry/default/resize/engine-exit contract passed at 75%, 100%, 150% (not a render test)")

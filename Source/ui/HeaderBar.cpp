@@ -6,15 +6,17 @@ EngineBadge::EngineBadge() : juce::Button("Processing engine")
     setTooltip("Switch DSP / selected neural model. Tiny: 48k, StemgenRT research: 44.1k.");
 }
 
-void EngineBadge::updateState(bool selected, bool available, bool bypassed, bool offline)
+void EngineBadge::updateState(bool selected, bool available, bool bypassed, bool offline, bool tracking)
 {
-    if (selected != neuralSelected || available != modelAvailable || bypassed != isBypassed || offline != offlineMode)
+    if (selected != neuralSelected || available != modelAvailable || bypassed != isBypassed || offline != offlineMode || tracking != isTracking)
     {
+        isTracking = tracking;
         neuralSelected = selected;
         modelAvailable = available;
         isBypassed = bypassed;
         offlineMode = offline;
-        setTooltip(neuralSelected ? (modelAvailable ? (offlineMode
+        setTooltip(isTracking ? "TRACK: zero added plugin latency, direct clean mic monitor; no vocal separation"
+            : neuralSelected ? (modelAvailable ? (offlineMode
             ? "Neural experimental | deterministic offline render | fixed 2880 samples"
             : "Neural experimental | asynchronous live inference | fixed 2880 samples")
             : "Neural model unavailable for this host rate or not installed")
@@ -26,7 +28,7 @@ void EngineBadge::updateState(bool selected, bool available, bool bypassed, bool
 void EngineBadge::paintButton(juce::Graphics& g, bool hover, bool down)
 {
     g.addTransform(juce::AffineTransform::scale(getWidth() / 218.0f, getHeight() / 26.0f));
-    const bool lit = neuralSelected && modelAvailable && !isBypassed;
+    const bool lit = isTracking || (neuralSelected && modelAvailable && !isBypassed);
     const auto surface = juce::Rectangle<float>(1, 1, 216, 24);
     g.setColour(juce::Colour(0xff0f1013).withAlpha(0.95f));
     g.fillRoundedRectangle(surface.translated(0, 1), 5.0f);
@@ -40,11 +42,11 @@ void EngineBadge::paintButton(juce::Graphics& g, bool hover, bool down)
     g.fillRoundedRectangle(5.0f, 4.0f, 31.0f, 18.0f, 3.4f);
     g.setColour(lit ? juce::Colours::white : Theme::text);
     g.setFont(Theme::mono(10.5f));
-    g.drawText(neuralSelected ? "AI" : "DSP", 5, 4, 31, 18,
+    g.drawText(isTracking ? "REC" : (neuralSelected ? "AI" : "DSP"), 5, 4, 31, 18,
                juce::Justification::centred, false);
     g.setColour(modelAvailable ? Theme::text : Theme::textDim);
     g.setFont(Theme::mono(11.2f));
-    const char* status = neuralSelected ? (modelAvailable ? (offlineMode ? "NEURAL / OFFLINE" : "NEURAL / EXPERIMENTAL") : "NEURAL / UNAVAILABLE")
+    const char* status = isTracking ? "TRACK / 0ms DRY MIC" : neuralSelected ? (modelAvailable ? (offlineMode ? "NEURAL / OFFLINE" : "NEURAL / EXPERIMENTAL") : "NEURAL / UNAVAILABLE")
                                         : (modelAvailable ? "CLASSICAL / AI READY" : "CLASSICAL / DSP ONLY");
     g.drawText(status, 41, 2, 174, 22, juce::Justification::centredLeft, false);
 }
@@ -74,6 +76,7 @@ HeaderBar::HeaderBar(SkellSeparatorAudioProcessor& p) : processor(p)
     };
     engine.onClick = [this]
     {
+        if (processor.isTrackingMode()) { processor.setTrackingMode(false); return; }
         const bool selected = processor.apvts.getRawParameterValue("engineMode")->load() > 0.5f;
         // Preserve saved sessions; allow returning to Classical without a model.
         if (!selected && processor.availableNeuralMode() == 0) return;
@@ -155,7 +158,7 @@ void HeaderBar::refresh(bool active)
                          || processor.hostBypassActive.load(std::memory_order_relaxed);
     const bool selected = processor.apvts.getRawParameterValue("engineMode")->load() > 0.5f;
     // Disable only entering unavailable Neural, never leaving it.
-    engine.setEnabled(processor.hasNeuralBackend() || selected);
+    engine.setEnabled(processor.hasNeuralBackend() || selected || processor.isTrackingMode());
     // A saved StemgenRT selection must not show AI READY when the model
     // is missing or the host runs at an incompatible sample rate.
     const bool selectedModelAvailable = processor.hasNeuralBackend()

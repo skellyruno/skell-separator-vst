@@ -2,7 +2,7 @@ name: Streaming Neural and Benchmark Validation
 on:
   workflow_dispatch:
   push:
-    branches: [main]
+    branches: [main, research/stemgenrt-vocal-backend]
   pull_request:
 
 jobs:
@@ -44,6 +44,8 @@ jobs:
           SKELL_SANITIZE: "1"
           SKELL_TEST_BINARY: /tmp/skell-neural-blend-asan
         run: bash tests/run_neural_blend.sh
+      - name: Validate transparent zero-latency vocal tracking monitor
+        run: bash tests/run_tracking_monitor.sh
       - name: Compact UI geometry / resize / defaults contract
         run: python tests/ui_layout_contract.py
       - name: Benchmark metric self-test

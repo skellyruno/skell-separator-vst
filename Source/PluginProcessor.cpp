@@ -117,7 +117,7 @@ void SkellSeparatorAudioProcessor::prepareToPlay(double sampleRate, int)
     monoBlend.setCurrentAndTargetValue(modeParam->load() < 0.5f ? 1.0f : 0.0f);
     // Fallback uses fixed 1024 samples for ALL quality settings. Never tell
     // the host quality changes latency when this engine does not.
-    setLatencySamples(LatencyAlignedStems::skellLatency());
+    setLatencySamples(skell::TrackingMonitor::reportedLatency(isTrackingMode(), LatencyAlignedStems::skellLatency()));
 }
 
 void SkellSeparatorAudioProcessor::releaseResources()
@@ -164,6 +164,7 @@ void SkellSeparatorAudioProcessor::processAudio(juce::AudioBuffer<float>& b, boo
         solos[ix] = soloParams[ix]->load(std::memory_order_relaxed) > 0.5f;
         mutes[ix] = muteParams[ix]->load(std::memory_order_relaxed) > 0.5f;
     }
+    const bool tracking = isTrackingMode();
     const bool bypassRequested = hostBypassed || bypassParam->load() > 0.5f;
     mixer.setTargets(gains, solos, mutes, bypassRequested);
     // Read automation once per callback, just like gain/Solo/Mute. When in
@@ -172,7 +173,7 @@ void SkellSeparatorAudioProcessor::processAudio(juce::AudioBuffer<float>& b, boo
     const bool neuralEnabled = neural.active();
     const bool wantsResearch = stemgenResearchParam != nullptr &&
         stemgenResearchParam->load(std::memory_order_relaxed) > 0.5f;
-    const bool neuralSelected = neuralEnabled && !bypassRequested &&
+    const bool neuralSelected = neuralEnabled && !bypassRequested && !tracking &&
         engineModeParam->load(std::memory_order_relaxed) > 0.5f &&
         (availableNeuralMode() == (wantsResearch ? 2 : 1));
     strengthSmoothing.setTargetValue(neuralStrengthParam->load(std::memory_order_relaxed));
@@ -231,11 +232,15 @@ void SkellSeparatorAudioProcessor::processAudio(juce::AudioBuffer<float>& b, boo
         }
         ++neuralSampleIndex;
         const auto out = mixer.mix(stemSamples, rawDelayed);
-        l[i] = out[0];
-        if (r != nullptr) r[i] = out[1];
+        // Keep the classical history warm so exiting live monitoring does not
+        // resume with stale FFT state. Monitor is genuinely zero PDC: its
+        // output comes directly from THIS input sample, never delayed stems.
+        const auto monitor = skell::TrackingMonitor::sample(rawLeft, rawRight);
+        l[i] = tracking ? monitor[0] : out[0];
+        if (r != nullptr) r[i] = tracking ? monitor[1] : out[1];
         // DAW floating-point buses can exceed 0 dBFS without numerical
         // clipping. Show the user; do not insert an unrequested limiter.
-        overZero |= std::abs(out[0]) > 1.0f || (r != nullptr && std::abs(out[1]) > 1.0f);
+        overZero |= std::abs(l[i]) > 1.0f || (r != nullptr && std::abs(r[i]) > 1.0f);
     }
     for (int ch = 2; ch < b.getNumChannels(); ++ch) b.clear(ch, 0, n);
     if (overZero) overZeroBlocks.fetch_add(1, std::memory_order_relaxed);
@@ -243,6 +248,15 @@ void SkellSeparatorAudioProcessor::processAudio(juce::AudioBuffer<float>& b, boo
     inputActivity.store(0.80f * inputActivity.load(std::memory_order_relaxed)
                         + 0.20f * juce::jlimit(0.0f, 1.0f, peak * 2.0f),
                         std::memory_order_relaxed);
+}
+
+void SkellSeparatorAudioProcessor::setTrackingMode(bool enabled)
+{
+    // Called from the menu/message thread, never the audio callback. Host PDC
+    // must match the actual path: no fake 0-ms monitoring with 2880-sample PDC.
+    if (trackingMode.exchange(enabled, std::memory_order_acq_rel) != enabled)
+        setLatencySamples(skell::TrackingMonitor::reportedLatency(
+            enabled, LatencyAlignedStems::skellLatency()));
 }
 
 void SkellSeparatorAudioProcessor::resetAllParameters()
@@ -254,6 +268,7 @@ void SkellSeparatorAudioProcessor::resetAllParameters()
         p->endChangeGesture();
     }
     presetIndex.store(0);
+    setTrackingMode(false);
 }
 
 void SkellSeparatorAudioProcessor::usePreset(int index)
@@ -293,6 +308,7 @@ void SkellSeparatorAudioProcessor::getStateInformation(juce::MemoryBlock& dest)
     state.setProperty("scale", uiScale.load(), nullptr);
     state.setProperty("preset", presetIndex.load(), nullptr);
     state.setProperty("circularKnobs", circularKnobs.load(), nullptr);
+    state.setProperty("trackingMode", isTrackingMode(), nullptr);
     if (auto xml = state.createXml()) copyXmlToBinary(*xml, dest);
 }
 
@@ -305,6 +321,7 @@ void SkellSeparatorAudioProcessor::setStateInformation(const void* data, int siz
             setUiScale(static_cast<int>(tree.getProperty("scale", 75)));
             presetIndex.store(juce::jlimit(0, 3, static_cast<int>(tree.getProperty("preset", 0))));
             circularKnobs.store(static_cast<bool>(tree.getProperty("circularKnobs", false)));
+            setTrackingMode(static_cast<bool>(tree.getProperty("trackingMode", false)));
             apvts.replaceState(tree);
         }
 }

@@ -7,6 +7,7 @@
 #include "dsp/SpectralAnalyzer.h"
 #include "dsp/StreamingNeural.h"
 #include "dsp/StemgenRTBridge.h"
+#include "dsp/TrackingMonitor.h"
 #include "dsp/LatencyAlignedStems.h"
 #include "dsp/NeuralVoiceBlend.h"
 
@@ -72,6 +73,10 @@ public:
     std::uint64_t getNeuralStaleFrames() const noexcept { return neural.staleFrames(); }
     double getNeuralWorkerMeanUs() const noexcept { return neural.meanWorkerFrameUs(); }
     std::uint64_t getNeuralWorkerMaxUs() const noexcept { return neural.maxWorkerFrameUs(); }
+    // Called from GUI/non-real-time host state thread; changes reported PDC.
+    // Switch while the DAW transport is stopped to avoid timeline jumps.
+    void setTrackingMode(bool enabled);
+    bool isTrackingMode() const noexcept { return trackingMode.load(std::memory_order_relaxed); }
     void usePreset(int index);
     int getUiScale() const noexcept { return uiScale.load(); }
     void setUiScale(int scale) noexcept { uiScale.store(juce::jlimit(75, 150, scale)); }
@@ -97,6 +102,7 @@ private:
     std::atomic<float>* neuralStrengthParam = nullptr;
     std::atomic<float>* stemgenResearchParam = nullptr;
     juce::SmoothedValue<float, juce::ValueSmoothingTypes::Linear> strengthSmoothing;
+    std::atomic<bool> trackingMode { false };
     std::atomic<int> uiScale { 75 }, presetIndex { 0 };
     std::atomic<bool> circularKnobs { false };
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(SkellSeparatorAudioProcessor)

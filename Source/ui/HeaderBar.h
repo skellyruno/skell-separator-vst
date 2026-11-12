@@ -13,9 +13,9 @@ class EngineBadge final : public juce::Button
 public:
     EngineBadge();
     void paintButton(juce::Graphics&, bool hovered, bool pressed) override;
-    void updateState(bool selected, bool available, bool bypassed, bool offline);
+    void updateState(bool selected, bool available, bool bypassed, bool offline, bool tracking);
 private:
-    bool neuralSelected = false, modelAvailable = false, isBypassed = false, offlineMode = false;
+    bool neuralSelected = false, modelAvailable = false, isBypassed = false, offlineMode = false, isTracking = false;
 };
 
 class HeaderBar final : public juce::Component
