@@ -19,11 +19,11 @@ import tempfile
 import numpy as np
 
 
-def decode(path: Path, rate: int) -> np.ndarray:
+def decode(path: Path, rate: int, start_sec: float, duration_sec: float) -> np.ndarray:
     if not shutil.which('ffmpeg'):
         raise RuntimeError('ffmpeg is required for FLAC/WAV decoding')
     result = subprocess.run([
-        'ffmpeg', '-nostdin', '-v', 'error', '-i', str(path),
+        'ffmpeg', '-nostdin', '-v', 'error', '-ss', str(start_sec), '-i', str(path), '-t', str(duration_sec),
         '-ar', str(rate), '-ac', '2', '-f', 'f32le', '-acodec', 'pcm_f32le', '-'
     ], check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     samples = np.frombuffer(result.stdout, dtype='<f4').copy().reshape(-1, 2)
@@ -114,15 +114,18 @@ def main():
     p.add_argument('--rate',type=int,default=44100)
     p.add_argument('--snr-db',type=float,default=6.)
     p.add_argument('--compiler',default='g++')
+    p.add_argument('--start-sec',type=float,default=0.)
+    p.add_argument('--duration-sec',type=float,default=15.)
     a=p.parse_args()
     root=Path(__file__).resolve().parents[1]
     with tempfile.TemporaryDirectory(prefix='skell-real-voice-') as t:
         runner=Path(t)/'recorded_vocal_runner'
         subprocess.run([a.compiler,'-std=c++17','-O2','-Wall','-Wextra','-Werror',
                         str(root/'tests/recorded_vocal_runner.cpp'),'-o',str(runner)],check=True)
-        dry=decode(a.dry,a.rate)
-        noise=decode(a.noise,a.rate)
+        dry=decode(a.dry,a.rate,a.start_sec,a.duration_sec)
+        noise=decode(a.noise,a.rate,a.start_sec,a.duration_sec)
         report=benchmark(dry,noise,a.rate,runner,a.snr_db)
+        report['segment_start_sec'] = a.start_sec
     a.report.parent.mkdir(parents=True,exist_ok=True)
     a.report.write_text(json.dumps(report,indent=2)+'\n',encoding='utf-8')
     print(f"Recorded voice {report['duration_sec']:.2f}s, {a.rate} Hz, baseline {report['results'][0]['input_sisdr_db']} dB SI-SDR")
