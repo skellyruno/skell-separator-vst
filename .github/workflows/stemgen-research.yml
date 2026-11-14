@@ -21,8 +21,10 @@ jobs:
           set -euo pipefail
           bash tests/run_stemgen_bridge.sh
           bash tests/run_stemgen_transport.sh
+          bash tests/run_fast_neural_hops.sh
           SKELL_SANITIZE=1 SKELL_TEST_BINARY=/tmp/skell-stemgen-sanitized bash tests/run_stemgen_bridge.sh
           SKELL_SANITIZE=1 SKELL_TEST_BINARY=/tmp/skell-stemgen-transport-sanitized bash tests/run_stemgen_transport.sh
+          CXX=clang++ SKELL_SANITIZE=1 bash tests/run_fast_neural_hops.sh
           bash tests/run_neural_contract.sh
           bash tests/run_neural_blend.sh
           python3 -m py_compile tools/install_stemgenrt_model.py

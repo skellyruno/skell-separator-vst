@@ -1,5 +1,5 @@
 #pragma once
-// Skell LIVE: zero-lookahead four-band IIR noise reducer + independent
+// Skell LIVE: zero-lookahead eight-band IIR noise reducer + independent
 // broadband adaptive gate/expander. No FFT, model, allocations, or locks.
 // Clean is NOT a vocal source separator and does not perform dereverberation.
 #include <algorithm>
@@ -24,8 +24,11 @@ public:
         gateOpen = onePole(rate, 0.0003);
         gateClose = onePole(rate, 0.19);
         cleanBlendPole = onePole(rate, 0.004);
-        for (int k = 0; k < 3; ++k) {
-            const double hz = k == 0 ? 270.0 : k == 1 ? 1550.0 : 4800.0;
+        constexpr std::array<double, splitCount> frequencies {
+            150.0, 360.0, 750.0, 1500.0, 2600.0, 4300.0, 7200.0
+        };
+        for (int k = 0; k < splitCount; ++k) {
+            const double hz = frequencies[static_cast<size_t>(k)];
             const auto cutoff = std::min(hz, rate * 0.40);
             for (auto& channel : highpass)
                 channel[static_cast<size_t>(k)].prepare(rate, cutoff);
@@ -85,15 +88,15 @@ public:
                                 candidate > noiseFloor ? floorRise : floorFall);
         }
 
-        // Three cascaded complementary second-order high-pass crossovers.
+        // Seven complementary second-order high-pass crossovers.
         // Top band isolates hiss without opening on low-pitched vowels.
         // The residual of each split guarantees exact reconstruction when
         // all gains are unity; no lookahead or analysis window is introduced.
-        std::array<std::array<float, 4>, 2> bands {};
+        std::array<std::array<float, bandCount>, 2> bands {};
         const std::array<float, 2> inputs {left, right};
         for (size_t ch = 0; ch < 2; ++ch) {
             float remainder = inputs[ch];
-            for (int k = 2; k >= 0; --k) {
+            for (int k = splitCount - 1; k >= 0; --k) {
                 const float upper = highpass[ch][static_cast<size_t>(k)].process(remainder);
                 bands[ch][static_cast<size_t>(k + 1)] = upper;
                 remainder -= upper;
@@ -106,7 +109,7 @@ public:
         const bool mayLearnNoise = detector < std::max(noiseFloor * 7.f, 0.014f);
         float cleaned[2] {0.f, 0.f};
         float activeEnergy = 0.f, attenuatedEnergy = 0.f;
-        for (size_t k = 0; k < 4; ++k) {
+        for (size_t k = 0; k < bandCount; ++k) {
             const float instant = std::max(std::abs(bands[0][k]), std::abs(bands[1][k]));
             bandEnvelope[k] = smooth(bandEnvelope[k], instant,
                                      instant > bandEnvelope[k] ? bandAttack : bandRelease);
@@ -204,8 +207,10 @@ private:
         float b0 = 0.f, b1 = 0.f, b2 = 0.f, a1 = 0.f, a2 = 0.f;
         float z1 = 0.f, z2 = 0.f;
     };
-    std::array<std::array<HighPass, 3>, 2> highpass {};
-    std::array<float, 4> bandEnvelope {}, bandFloor {}, bandGain {};
+    static constexpr int bandCount = 8;
+    static constexpr int splitCount = bandCount - 1;
+    std::array<std::array<HighPass, splitCount>, 2> highpass {};
+    std::array<float, bandCount> bandEnvelope {}, bandFloor {}, bandGain {};
     float attack = 0.f, detectorRelease = 0.f;
     float floorRise = 0.f, floorFall = 0.f;
     float bandAttack = 0.f, bandRelease = 0.f, bandOpen = 0.f, bandClose = 0.f;
