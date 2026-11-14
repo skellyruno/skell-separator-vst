@@ -22,6 +22,7 @@ jobs:
           bash tests/run_stemgen_bridge.sh
           bash tests/run_stemgen_transport.sh
           bash tests/run_fast_neural_hops.sh
+          bash tests/run_fast_neural_paced.sh
           SKELL_SANITIZE=1 SKELL_TEST_BINARY=/tmp/skell-stemgen-sanitized bash tests/run_stemgen_bridge.sh
           SKELL_SANITIZE=1 SKELL_TEST_BINARY=/tmp/skell-stemgen-transport-sanitized bash tests/run_stemgen_transport.sh
           CXX=clang++ SKELL_SANITIZE=1 bash tests/run_fast_neural_hops.sh
@@ -44,7 +45,7 @@ jobs:
       - name: Configure research build (no noncommercial model weights)
         shell: pwsh
         run: |
-          cmake -S . -B build-stemgen -A x64 -DSKELL_ENABLE_STEMGENRT=ON -DONNXRUNTIME_ROOT="$PWD/ort-sdk/onnxruntime-win-x64-1.26.0"
+          cmake -S . -B build-stemgen -A x64 -DSKELL_ENABLE_STEMGENRT=ON -DSKELL_BUILD_STEMGEN_HOP_TIMING=ON -DONNXRUNTIME_ROOT="$PWD/ort-sdk/onnxruntime-win-x64-1.26.0"
       - name: Compile VST3 and Standalone with optional ONNX adapter
         shell: pwsh
         run: cmake --build build-stemgen --config Release --parallel 2
@@ -54,3 +55,31 @@ jobs:
           $plugin = Get-ChildItem build-stemgen -Recurse -Directory -Filter '*.vst3' | Select-Object -First 1
           if (!$plugin) { throw 'Windows VST3 not generated' }
           Write-Host "Research VST3 compiled: $($plugin.FullName)"
+      - name: Download exact upstream noncommercial model for ephemeral research timing
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          # CC BY-NC-SA weights with unresolved source-data rights. Research
+          # diagnostic only; never package them with Skell VST3 or upload them.
+          $url = 'https://github.com/sweetspotsoundsystem/StemgenRT-5.8/releases/download/v0.7.0/independent.onnx'
+          & curl.exe --fail --silent --show-error --location --retry 3 --output independent.onnx $url
+          if ($LASTEXITCODE -ne 0) { throw 'Model research download failed' }
+          $model = Get-Item independent.onnx
+          $sha = (Get-FileHash independent.onnx -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($model.Length -ne 31946241 -or $sha -ne '0a49388dd2a47986ab9a161c8764c22853b4d601c188ac052eb530f076d513c7') {
+            throw 'Refused incorrect model bytes or graph revision'
+          }
+      - name: Measure real 128-hop ONNX inference on Windows CPU (not DAW qualification)
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $env:PATH = "$PWD/ort-sdk/onnxruntime-win-x64-1.26.0/lib;$env:PATH"
+          $exe = Get-ChildItem build-stemgen -Recurse -File -Filter 'SkellStemgenHopTiming.exe' | Select-Object -First 1
+          if (!$exe) { throw 'Missing native ONNX benchmark executable' }
+          & $exe.FullName "$PWD/independent.onnx" 1200
+          if ($LASTEXITCODE -ne 0) { throw "Real graph benchmark rejected inference: $LASTEXITCODE" }
+      - name: Remove noncommercial model from workspace after research
+        if: always()
+        shell: pwsh
+        run: |
+          Remove-Item independent.onnx -Force -ErrorAction SilentlyContinue

@@ -153,21 +153,26 @@ private:
 } // anonymous namespace
 
 namespace skell {
-std::unique_ptr<NeuralFrameBackend> createStemgenRTBackend(const char* localModelPath) {
+std::unique_ptr<StemgenHopModel> createStemgenRTHopModel(const char* localModelPath) {
     if (localModelPath == nullptr || *localModelPath == '\0') return {};
     try {
         auto model = std::make_unique<OrtHopModel>(localModelPath);
-        if (!model->valid()) return {};
-        auto bridge = std::make_unique<StemgenRTBridge>(std::move(model));
-        return bridge->valid() ? std::move(bridge) : nullptr;
+        return model->valid() ? std::move(model) : nullptr;
     } catch (...) {
         // Unsupported/missing runtime or graph: fail closed to Classical.
         return {};
     }
 }
+std::unique_ptr<NeuralFrameBackend> createStemgenRTBackend(const char* localModelPath) {
+    auto model = createStemgenRTHopModel(localModelPath);
+    if (!model) return {};
+    auto bridge = std::make_unique<StemgenRTBridge>(std::move(model));
+    return bridge->valid() ? std::move(bridge) : nullptr;
+}
 }
 #else
 namespace skell {
+std::unique_ptr<StemgenHopModel> createStemgenRTHopModel(const char*) { return {}; }
 std::unique_ptr<NeuralFrameBackend> createStemgenRTBackend(const char*) { return {}; }
 }
 #endif

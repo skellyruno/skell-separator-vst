@@ -141,3 +141,17 @@ if(SKELL_ENABLE_STEMGENRT)
     target_compile_definitions(SkellSeparator PRIVATE SKELL_WITH_STEMGENRT=1)
     message(STATUS "StemgenRT research adapter enabled: SHA-256 verified graph required at 44.1 kHz")
 endif()
+
+# Optional native model-timing diagnostic (research only; no weights bundled).
+option(SKELL_BUILD_STEMGEN_HOP_TIMING "Build external-model Windows research latency diagnostic" OFF)
+if(SKELL_BUILD_STEMGEN_HOP_TIMING)
+    if(NOT SKELL_ENABLE_STEMGENRT)
+        message(FATAL_ERROR "SKELL_BUILD_STEMGEN_HOP_TIMING requires SKELL_ENABLE_STEMGENRT=ON")
+    endif()
+    add_executable(SkellStemgenHopTiming tests/stemgen_native_timing.cpp)
+    target_link_libraries(SkellStemgenHopTiming PRIVATE
+        SkellSeparator Threads::Threads
+        juce::juce_audio_utils juce::juce_cryptography)
+    target_compile_features(SkellStemgenHopTiming PRIVATE cxx_std_17)
+    target_compile_definitions(SkellStemgenHopTiming PRIVATE JUCE_WEB_BROWSER=0 JUCE_USE_CURL=0)
+endif()

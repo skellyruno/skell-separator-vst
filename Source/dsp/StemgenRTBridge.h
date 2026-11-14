@@ -46,5 +46,8 @@ private:
 // The trained model is accepted ONLY when an independently installed, verified
 // StemgenRT 0.7/0.8 ONNX graph and optional ONNX Runtime SDK are available.
 // Returns null when disabled, absent, incompatible, or unlicensed for the use.
+// Research-only direct 128-hop endpoint for native deadline measurements.
+// No model is bundled. Null if the local graph is absent or fails SHA/shape checks.
+std::unique_ptr<StemgenHopModel> createStemgenRTHopModel(const char* localModelPath);
 std::unique_ptr<NeuralFrameBackend> createStemgenRTBackend(const char* localModelPath);
 }
