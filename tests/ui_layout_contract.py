@@ -79,6 +79,7 @@ assert 'SEPARATE — Ambience / Voice / Reverb' in editor
 assert '"trackGate"' in processor
 assert "withTargetComponent(header.getMenuAnchor())" in editor
 assert "for (int pct : { 56, 75, 100, 125, 150 })" in editor
+assert "result == 156 || result == 175" in editor
 assert "inline const juce::Colour accent { 0xff39ff3a }" in (root / "Source/ui/Theme.h").read_text()
 assert "Theme::meterAccent" in (root / "Source/ui/StemMeter.cpp").read_text()
 print("Static JUCE geometry/default/resize/menu/color contract passed at 56%, 75%, 100%, 150% (not a render test)")

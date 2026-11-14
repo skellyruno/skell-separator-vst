@@ -241,7 +241,7 @@ void SkellSeparatorAudioProcessorEditor::showMenu()
                 }
             }
             else if (result == 20 || result == 21) p.setKnobCircular(result == 21);
-            else if (result == 175 || result == 200 || result == 225 || result == 250)
+            else if (result == 156 || result == 175 || result == 200 || result == 225 || result == 250)
                 editor.applyScale(result - 100);
             else if (result == 50)
             {
