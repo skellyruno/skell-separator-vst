@@ -66,14 +66,33 @@ def benchmark(dry, noise, rate, exe, target_snr_db):
     silence = np.zeros((rate, 2), dtype='float32')
     vocal = np.vstack((silence, dry))
     noise = noise[:len(vocal)].astype('float32').copy()
+    # Only source-active windows can measure overlapping noise. Never scale
+    # digital silence into a fake reference by dividing by ~zero RMS.
+    source_voice_rms = rms(dry)
+    source_noise_rms = rms(noise[rate:])
+    if source_voice_rms < 1e-5 or source_noise_rms < 1e-5:
+        return {'scorable': False,
+                'reason': 'Original vocal or instrument stem is essentially silent',
+                'sample_rate': rate, 'duration_sec': len(dry)/rate,
+                'segment_source_voice_rms': source_voice_rms,
+                'segment_source_instrument_rms': source_noise_rms,
+                'reference_snr_db': target_snr_db, 'results': [], 'dereverb': None}
     ratio = 10**(target_snr_db/20)
-    noise *= np.float32(rms(dry)/(ratio*rms(noise[rate:])))
+    noise *= np.float32(source_voice_rms/(ratio*source_noise_rms))
     peak = float(np.max(np.abs(vocal + noise)))
     common_gain = min(1., 0.93/max(peak, 1e-12))
     vocal *= common_gain
     noise *= common_gain
     mixture = vocal + noise
     before = sisdr(mixture[rate:], vocal[rate:])
+    # The controlled reference should measure close to its target SNR.
+    # Massive SI-SDR (>100 dB) means nearly silent or degenerate stems.
+    if not np.isfinite(before) or abs(before - target_snr_db) > 1.5:
+        return {'scorable': False,
+                'reason': 'Baseline SI-SDR inconsistent with the declared mixture SNR',
+                'sample_rate': rate, 'duration_sec': len(dry)/rate,
+                'reference_snr_db': target_snr_db,
+                'input_sisdr_db': before, 'results': [], 'dereverb': None}
     cases=[]
     for clean,gate,tails in [(0,0,0.35),(.4,0,.35),(.7,0,.35),(.9,0,.35),(.7,.3,.35),(.7,.7,.35)]:
         got = process(exe,'cleanup',mixture,rate,[clean,gate,tails])
@@ -99,6 +118,8 @@ def benchmark(dry, noise, rate, exe, target_snr_db):
           'after_mismatched_sisdr_db':round(sisdr(wrong,dry),3),
           'matched_error_rms':rms(recovered-dry)}
     return {'source_audio':'external recorded vocal; singing must be independently confirmed',
+            'scorable':True, 'segment_source_voice_rms':source_voice_rms,
+            'segment_source_instrument_rms':source_noise_rms,
             'source_audio_redistributed':False,
             'noise_recording':'external recording',
             'reference_snr_db':target_snr_db,
@@ -128,6 +149,10 @@ def main():
         report['segment_start_sec'] = a.start_sec
     a.report.parent.mkdir(parents=True,exist_ok=True)
     a.report.write_text(json.dumps(report,indent=2)+'\n',encoding='utf-8')
+    if not report['scorable']:
+        print(f"UNSCORABLE {a.start_sec:g}s: {report['reason']}. Source activity was too low.")
+        print(f'JSON report: {a.report}')
+        return
     print(f"Recorded voice {report['duration_sec']:.2f}s, {a.rate} Hz, baseline {report['results'][0]['input_sisdr_db']} dB SI-SDR")
     for x in report['results']:
         print(f"Clean {x['clean']:4.2f}, Gate {x['gate']:4.2f}: delta {x['delta_sisdr_db']:+.3f} dB, isolated noise {x['noise_only_reduction_db']:+.3f} dB")

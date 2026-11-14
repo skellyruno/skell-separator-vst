@@ -59,8 +59,19 @@ jobs:
           from pathlib import Path
           import json, statistics
           reports=[json.loads(p.read_text()) for p in sorted(Path('real-singing-metrics').glob('*.json'))]
-          delta=[next(c['delta_sisdr_db'] for c in r['results'] if c['clean']==0.7 and c['gate']==0) for r in reports]
-          summary={'source':'Mr_Yesterday — Just Lucky, I Guess (2025), CC BY 4.0','source_page':'https://ccmixter.org/files/Mr_Yesterday/70315','recordings_in_artifact':False,'windows_sec':[0,45,90,135],'clean_70_delta_sisdr_db':delta,'mean_delta_sisdr_db':statistics.mean(delta),'dereverb_reference':'synthetic known-room reflections, not separately recorded wet-only'}
+          # Declared windows remain in the report. Exclude only those without
+          # independently sufficient vocal AND accompaniment activity.
+          valid=[r for r in reports if r['scorable']]
+          if len(valid)<2:
+              raise RuntimeError(f'Only {len(valid)} measurable sung-vocal windows; at least two required')
+          delta=[next(c['delta_sisdr_db'] for c in r['results'] if c['clean']==0.7 and c['gate']==0) for r in valid]
+          summary={'source':'Mr_Yesterday — Just Lucky, I Guess (2025), CC BY 4.0',
+                   'source_page':'https://ccmixter.org/files/Mr_Yesterday/70315',
+                   'recordings_in_artifact':False, 'requested_windows_sec':[0,45,90,135],
+                   'scorable_windows_sec':[r['segment_start_sec'] for r in valid],
+                   'excluded_windows':[{'start_sec':r['segment_start_sec'],'reason':r['reason']} for r in reports if not r['scorable']],
+                   'clean_70_delta_sisdr_db':delta,'mean_delta_sisdr_db':statistics.mean(delta),
+                   'dereverb_reference':'synthetic known-room reflections, not separately recorded wet-only'}
           Path('real-singing-metrics/summary.json').write_text(json.dumps(summary,indent=2)+'\n')
           print(json.dumps(summary,indent=2))
           PY
