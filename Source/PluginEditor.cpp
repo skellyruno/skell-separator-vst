@@ -111,6 +111,10 @@ void SkellSeparatorAudioProcessorEditor::timerCallback()
     visualActivity += (target > visualActivity ? 0.11f : 0.07f) * (target - visualActivity);
     const bool active = visualActivity > 0.028f;
     header.refresh(active);
+    const bool live = processor.isTrackingMode();
+    ambience.setLiveMode(live);
+    voice.setLiveMode(live);
+    reverb.setLiveMode(live);
     ambience.refresh(active, bypass);
     voice.refresh(active, bypass);
     reverb.refresh(active, bypass);
@@ -141,9 +145,12 @@ void SkellSeparatorAudioProcessorEditor::applyScale(int percent)
 void SkellSeparatorAudioProcessorEditor::showMenu()
 {
     juce::PopupMenu popup;
-    popup.addSectionHeader("SKELL SEPARATOR  /  1.13");
+    popup.addSectionHeader("SKELL SEPARATOR  /  TRACK RESEARCH");
     popup.addItem(1, "Reset All");
     popup.addItem(2, "Copy Settings to Clipboard");
+    const bool tracking = processor.isTrackingMode();
+    popup.addItem(4, "LIVE — Clean / Gate / Tails (0 added samples)", true, tracking);
+    popup.addItem(6, "SEPARATE — Ambience / Voice / Reverb", true, !tracking);
     popup.addItem(3, "Input Mono Sum", true,
         processor.apvts.getRawParameterValue("channelMode")->load() < 0.5f);
     popup.addSeparator();
@@ -154,9 +161,13 @@ void SkellSeparatorAudioProcessorEditor::showMenu()
     quality.addItem(12, "Strong (more suppression)", true, qualityIndex == 2);
     popup.addSubMenu("Separation Quality", quality);
     juce::PopupMenu engines;
-    const bool experimental = processor.apvts.getRawParameterValue("engineMode")->load() > 0.5f;
-    engines.addItem(60, "Classical (worker idle)", true, !experimental);
-    engines.addItem(61, "Neural (experimental, 48 kHz only)", processor.hasNeuralBackend(), experimental);
+    const bool engineSelected = processor.apvts.getRawParameterValue("engineMode")->load() > 0.5f;
+    const bool wantsResearch = processor.apvts.getRawParameterValue("stemgenResearch")->load() > 0.5f;
+    engines.addItem(60, "Classical (worker idle)", true, !engineSelected);
+    engines.addItem(61, "Tiny Vocal (experimental, 48 kHz)", processor.availableNeuralMode() == 1,
+                    engineSelected && !wantsResearch);
+    engines.addItem(62, "StemgenRT (noncommercial research, 44.1 kHz)", processor.availableNeuralMode() == 2,
+                    engineSelected && wantsResearch);
     popup.addSubMenu("Processing Engine", engines);
     juce::PopupMenu strengthMenu;
     const float currentStrength = processor.apvts.getRawParameterValue("neuralStrength")->load();
@@ -174,7 +185,6 @@ void SkellSeparatorAudioProcessorEditor::showMenu()
     popup.addSubMenu("Scale", scale);
     popup.addSeparator();
     popup.addItem(50, "About / Model Status");
-    popup.addItem(51, "Help / Show Tutorial");
     juce::Component::SafePointer<SkellSeparatorAudioProcessorEditor> safe(this);
     popup.showMenuAsync(juce::PopupMenu::Options().withTargetComponent(&header),
         [safe](int result)
@@ -182,18 +192,21 @@ void SkellSeparatorAudioProcessorEditor::showMenu()
             if (safe == nullptr) return;
             auto& editor = *safe.getComponent();
             auto& p = editor.processor;
-            if (result == 51) editor.showGuidedTour(false);
-            else if (result == 1) p.resetAllParameters();
+            if (result == 1) p.resetAllParameters();
             else if (result == 2)
             {
                 juce::String out("Skell Separator settings\n");
+                out << "trackingMode = " << (p.isTrackingMode() ? 1 : 0) << "\n";
                 for (const auto& id : { "ambienceGain", "voiceGain", "reverbGain",
                                         "ambienceSolo", "voiceSolo", "reverbSolo",
                                         "ambienceMute", "voiceMute", "reverbMute",
-                                        "channelMode", "bypass", "quality", "engineMode", "neuralStrength" })
+                                        "channelMode", "bypass", "quality", "engineMode", "neuralStrength", "stemgenResearch",
+                                        "trackClean", "trackGate", "trackTails" })
                     out << id << " = " << p.apvts.getRawParameterValue(id)->load() << "\n";
                 juce::SystemClipboard::copyTextToClipboard(out);
             }
+            else if (result == 4) p.setTrackingMode(true);
+            else if (result == 6) p.setTrackingMode(false);
             else if (result == 3)
             {
                 if (auto* prm = p.apvts.getParameter("channelMode"))
@@ -204,13 +217,18 @@ void SkellSeparatorAudioProcessorEditor::showMenu()
                 }
             }
             else if (result >= 10 && result <= 12) editor.chooseQuality(result - 10);
-            else if (result == 60 || result == 61)
+            else if (result >= 60 && result <= 62)
             {
                 if (auto* prm = p.apvts.getParameter("engineMode"))
                 {
                     prm->beginChangeGesture();
-                    prm->setValueNotifyingHost(prm->convertTo0to1(result == 61 ? 1.0f : 0.0f));
+                    prm->setValueNotifyingHost(result == 60 ? 0.0f : 1.0f);
                     prm->endChangeGesture();
+                }
+                if (auto* mode = p.apvts.getParameter("stemgenResearch")) {
+                    mode->beginChangeGesture();
+                    mode->setValueNotifyingHost(result == 62 ? 1.0f : 0.0f);
+                    mode->endChangeGesture();
                 }
             }
             else if (result >= 325 && result <= 400)
@@ -233,11 +251,16 @@ void SkellSeparatorAudioProcessorEditor::showMenu()
                 details << p.neuralBackendName() << "\n"
                         << "Selected: " << (active ? "EXPERIMENTAL NEURAL" : "Classical") << "\n"
                         << "Strength: " << juce::String(p.apvts.getRawParameterValue("neuralStrength")->load() * 100.0f, 0) << "%\n"
-                        << "Backend available: " << (loaded ? "Yes" : "No (requires 48 kHz)") << "\n"
+                        << "Backend available: " << (loaded ? "Yes" : "No (Tiny: 48k / StemgenRT: 44.1k + model)") << "\n"
                         << "Inference: " << (p.isOfflineNeural() ? "deterministic offline" : "asynchronous live") << "\n"
-                        << "Tiny Vocal weights were trained ONLY on original procedural mixtures.\n"
+                        << "Tiny Vocal: synthetic-trained only. StemgenRT: external noncommercial weights.\n"
                         << "Not validated on licensed singing/music recordings.\n"
                         << "Reverb remains a classical estimate.\n"
+                        << "LIVE tracking: " << (p.isTrackingMode() ? "ON (0 added samples)" : "OFF") << "\n"
+                        << "LIVE Clean: " << juce::String(p.apvts.getRawParameterValue("trackClean")->load(), 0) << "%\n"
+                        << "LIVE Gate: " << juce::String(p.apvts.getRawParameterValue("trackGate")->load(), 0) << "%\n"
+                        << "LIVE Tails: " << juce::String(p.apvts.getRawParameterValue("trackTails")->load(), 0) << "%\n"
+                        << "LIVE is a zero-lookahead adaptive gate/expander, NOT neural denoising or dereverb.\n"
                         << "Host latency: " << p.getLatencySamples() << " samples.\n"
                         << "Model mean: " << juce::String(p.getNeuralWorkerMeanUs(), 1) << " us/frame\n"
                         << "Model maximum: " << juce::String(static_cast<juce::int64>(p.getNeuralWorkerMaxUs())) << " us/frame\n"

@@ -2,7 +2,7 @@ name: Skell Separator / Actual JUCE UI screenshots
 on:
   workflow_dispatch:
   push:
-    branches: [main]
+    branches: [main, research/stemgenrt-vocal-backend]
     paths:
       - '.github/workflows/ui-screenshots.yml'
       - 'CMakeLists.txt'
@@ -36,7 +36,7 @@ jobs:
           renderer=$(find build-ui -type f -name SkellSeparatorUIRenderer -executable | head -n 1)
           test -n "$renderer"
           xvfb-run -a -s '-screen 0 1920x1080x24' "$renderer" --output ui-screenshots
-          test "$(find ui-screenshots -name '*.png' | wc -l)" -eq 8
+          test "$(find ui-screenshots -name '*.png' | wc -l)" -eq 13
       - name: Upload screenshot artifact
         if: always()
         uses: actions/upload-artifact@v4

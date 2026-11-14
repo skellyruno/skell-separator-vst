@@ -2,7 +2,7 @@ name: Build Windows VST3
 on:
   workflow_dispatch:
   push:
-    branches: [main]
+    branches: [main, research/stemgenrt-vocal-backend]
   pull_request:
 
 jobs:

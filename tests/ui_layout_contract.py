@@ -42,9 +42,15 @@ for name, rect in controls.items():
     assert not intersects(over, rect), f"OVER overlaps {name}"
 
 panel = (7.5, 1.0, 295.0, 469.0)
-for name in ("gain", "solo", "mute", "meter"):
+for name in ("gain", "liveGain", "solo", "mute", "meter"):
     rect = bounds(column, name)
     assert inside(rect, panel), (name, rect)
+assert bounds(column, "liveGain") == bounds(column, "gain")
+assert 'gain.setVisible(!live)' in column and 'liveGain.setVisible(live)' in column
+assert 'solo.setVisible(!live)' in column and 'mute.setVisible(!live)' in column
+assert '"trackClean", "trackGate", "trackTails"' in column
+assert 'processor.setTrackingMode(!processor.isTrackingMode());' in header
+assert 'mode.setCaption(tracking ? "LIVE" : "SEPARATE")' in header
 for center in centers:
     assert inside((center-column_size[0]/2, 109, *column_size), (0, 0, *base)), center
 
@@ -59,6 +65,16 @@ for size in ((785, 448), (1047, 597), (1571, 896)):
         target = (round(x*sx), round(y*sy), round(w*sx), round(h*sy))
         assert inside(target, (0, 0, size[0], round(header_h*sy))), (size, name)
 # A recalled Neural setting at a different host rate must permit exiting it.
-assert 'if (!selected && !processor.hasNeuralBackend()) return;' in header
-assert 'engine.setEnabled(processor.hasNeuralBackend() || selected)' in header
+assert 'if (!selected && processor.availableNeuralMode() == 0) return;' in header
+# Existing engineMode 0/1 normalization remains unchanged for saved host automation.
+assert 'juce::StringArray { "Classical", "Neural Experimental" }, 0)' in processor
+assert 'stemgenResearch' in processor
+assert 'processor.availableNeuralMode() == 2 ? 1.0f : 0.0f' in header
+assert 'engine.setEnabled(processor.hasNeuralBackend() || selected || processor.isTrackingMode())' in header
+assert 'if (processor.isTrackingMode()) { processor.setTrackingMode(false); return; }' in header
+assert 'LIVE / 0ms DRY MIC' in header
+assert 'LIVE / CLEANUP ON' in header
+assert 'LIVE — Clean / Gate / Tails' in editor
+assert 'SEPARATE — Ambience / Voice / Reverb' in editor
+assert '"trackGate"' in processor
 print("Static JUCE geometry/default/resize/engine-exit contract passed at 75%, 100%, 150% (not a render test)")

@@ -24,6 +24,10 @@ SkellSeparatorAudioProcessor::SkellSeparatorAudioProcessor()
     qualityParam = apvts.getRawParameterValue("quality");
     engineModeParam = apvts.getRawParameterValue("engineMode");
     neuralStrengthParam = apvts.getRawParameterValue("neuralStrength");
+    stemgenResearchParam = apvts.getRawParameterValue("stemgenResearch");
+    trackCleanParam = apvts.getRawParameterValue("trackClean");
+    trackGateParam = apvts.getRawParameterValue("trackGate");
+    trackTailsParam = apvts.getRawParameterValue("trackTails");
 }
 
 juce::AudioProcessorValueTreeState::ParameterLayout SkellSeparatorAudioProcessor::makeLayout()
@@ -52,14 +56,30 @@ juce::AudioProcessorValueTreeState::ParameterLayout SkellSeparatorAudioProcessor
     layout.add(std::make_unique<juce::AudioParameterChoice>(
         juce::ParameterID { "engineMode", 1 }, "Processing Engine",
         juce::StringArray { "Classical", "Neural Experimental" }, 0));
+    layout.add(std::make_unique<juce::AudioParameterBool>(
+        juce::ParameterID { "stemgenResearch", 1 }, "StemgenRT Research Backend", false));
     layout.add(std::make_unique<juce::AudioParameterFloat>(
         juce::ParameterID { "neuralStrength", 1 }, "Neural Strength",
         juce::NormalisableRange<float>(0.0f, 1.0f, 0.01f), 0.65f));
+    // Separate live cleanup controls do not change the old engine IDs or
+    // restore semantics. Clean 0% keeps legacy Track Monitor bit-exact.
+    layout.add(std::make_unique<juce::AudioParameterFloat>(
+        juce::ParameterID { "trackClean", 1 }, "Track Clean",
+        juce::NormalisableRange<float>(0.0f, 100.0f, 1.0f), 0.0f));
+    layout.add(std::make_unique<juce::AudioParameterFloat>(
+        juce::ParameterID { "trackGate", 1 }, "Live Gate",
+        juce::NormalisableRange<float>(0.0f, 100.0f, 1.0f), 0.0f));
+    layout.add(std::make_unique<juce::AudioParameterFloat>(
+        juce::ParameterID { "trackTails", 1 }, "Track Tails",
+        juce::NormalisableRange<float>(0.0f, 100.0f, 1.0f), 35.0f));
     return layout;
 }
 
 void SkellSeparatorAudioProcessor::prepareToPlay(double sampleRate, int)
 {
+    liveCleanup.prepare(sampleRate);
+    wasTrackingAudio = false;
+    trackReductionDb.store(0.f, std::memory_order_relaxed);
     spectra.reset();
     inputActivity.store(0.0f, std::memory_order_relaxed);
     overZeroBlocks.store(0, std::memory_order_relaxed);
@@ -74,17 +94,28 @@ void SkellSeparatorAudioProcessor::prepareToPlay(double sampleRate, int)
     // the host callback. This model's STFT/training is explicitly 48 kHz.
     // When both are built, original Tiny Vocal takes precedence over RNNoise.
     std::unique_ptr<skell::NeuralFrameBackend> backend;
+    int backendMode = 0;
     if (std::abs(sampleRate - 48000.0) < 0.5) {
 #if defined(SKELL_WITH_TINY_VOCAL) && SKELL_WITH_TINY_VOCAL
         backend = skell::createTinyVocalBackend();
 #elif defined(SKELL_WITH_RNNOISE) && SKELL_WITH_RNNOISE
         backend = skell::createRNNoiseBackend();
 #endif
+        if (backend) backendMode = 1;
     }
+#if defined(SKELL_WITH_STEMGENRT) && SKELL_WITH_STEMGENRT
+    if (std::abs(sampleRate - skell::stemgenSampleRate) < 0.5) {
+        const auto file = juce::File::getSpecialLocation(juce::File::userApplicationDataDirectory)
+            .getChildFile("Skell/Separator/Models/independent.onnx");
+        backend = skell::createStemgenRTBackend(file.getFullPathName().toRawUTF8());
+        if (backend) backendMode = 2;
+    }
+#endif
     // Hosts normally set the non-realtime flag before prepareToPlay. In an
     // offline bounce, deterministic inline inference is safe and avoids
     // asynchronous worker starvation. Live playback remains lock-free.
-    neural.start(std::move(backend), isNonRealtime());
+    const bool started = neural.start(std::move(backend), isNonRealtime());
+    preparedNeuralMode.store(started ? backendMode : 0, std::memory_order_release);
     mixer.prepare(sampleRate);
     // Host state may be restored before prepare. Honor the saved settings on
     // the very first processed sample (especially a bypassed session).
@@ -103,12 +134,13 @@ void SkellSeparatorAudioProcessor::prepareToPlay(double sampleRate, int)
     monoBlend.setCurrentAndTargetValue(modeParam->load() < 0.5f ? 1.0f : 0.0f);
     // Fallback uses fixed 1024 samples for ALL quality settings. Never tell
     // the host quality changes latency when this engine does not.
-    setLatencySamples(LatencyAlignedStems::skellLatency());
+    setLatencySamples(skell::TrackingMonitor::reportedLatency(isTrackingMode(), LatencyAlignedStems::skellLatency()));
 }
 
 void SkellSeparatorAudioProcessor::releaseResources()
 {
     neural.stop();
+    preparedNeuralMode.store(0, std::memory_order_release);
 }
 
 bool SkellSeparatorAudioProcessor::isBusesLayoutSupported(const BusesLayout& layout) const
@@ -149,14 +181,62 @@ void SkellSeparatorAudioProcessor::processAudio(juce::AudioBuffer<float>& b, boo
         solos[ix] = soloParams[ix]->load(std::memory_order_relaxed) > 0.5f;
         mutes[ix] = muteParams[ix]->load(std::memory_order_relaxed) > 0.5f;
     }
+    const bool tracking = isTrackingMode();
     const bool bypassRequested = hostBypassed || bypassParam->load() > 0.5f;
+    if (tracking) {
+        if (!wasTrackingAudio) liveCleanup.reset();
+        wasTrackingAudio = true;
+        // Tracking does not run expensive FFT, classical stem mixing, or model
+        // inference. The mic is processed at the current sample index: 0 PDC.
+        auto* l = b.getWritePointer(0);
+        auto* r = channels == 2 ? b.getWritePointer(1) : nullptr;
+        const float clean = bypassRequested ? 0.f :
+            std::clamp(trackCleanParam->load(std::memory_order_relaxed) * 0.01f, 0.f, 1.f);
+        const float gate = bypassRequested ? 0.f :
+            std::clamp(trackGateParam->load(std::memory_order_relaxed) * 0.01f, 0.f, 1.f);
+        const float tails = std::clamp(trackTailsParam->load(std::memory_order_relaxed) * 0.01f, 0.f, 1.f);
+        liveCleanup.setControls(clean, gate, tails);
+        if (neural.active() && n > 0)
+            neural.submitSample(0.f, 0.f, neuralSampleIndex, false);
+        float peak = 0.f;
+        bool overZero = false;
+        for (int i = 0; i < n; ++i) {
+            const auto input = skell::TrackingMonitor::sample(l[i], r ? r[i] : l[i]);
+            const auto output = liveCleanup.process(input[0], input[1]);
+            l[i] = output[0];
+            if (r) r[i] = output[1];
+            peak = std::max(peak, std::max(std::abs(input[0]), std::abs(input[1])));
+            overZero |= std::abs(output[0]) > 1.f || (r && std::abs(output[1]) > 1.f);
+        }
+        for (int ch = 2; ch < b.getNumChannels(); ++ch) b.clear(ch, 0, n);
+        trackReductionDb.store(liveCleanup.gainReductionDb(), std::memory_order_relaxed);
+        if (overZero) overZeroBlocks.fetch_add(1, std::memory_order_relaxed);
+        audioBlockCounter.fetch_add(1, std::memory_order_relaxed);
+        inputActivity.store(0.80f * inputActivity.load(std::memory_order_relaxed)
+                            + 0.20f * juce::jlimit(0.f, 1.f, peak * 2.f),
+                            std::memory_order_relaxed);
+        neuralSampleIndex += n;
+        return;
+    }
+    if (wasTrackingAudio) {
+        // Re-prime at the next audio block after returning to mix. GUI never
+        // resets DSP state concurrently with the host audio thread.
+        separator.reset();
+        alignment.reset();
+        neuralBlend.reset();
+        wasTrackingAudio = false;
+        trackReductionDb.store(0.f, std::memory_order_relaxed);
+    }
     mixer.setTargets(gains, solos, mutes, bypassRequested);
     // Read automation once per callback, just like gain/Solo/Mute. When in
     // Classical or Bypass modes, the neural worker must not compute unused
     // masks; it will restart at a clean frame boundary after reactivation.
     const bool neuralEnabled = neural.active();
-    const bool neuralSelected = neuralEnabled && !bypassRequested
-                             && engineModeParam->load(std::memory_order_relaxed) > 0.5f;
+    const bool wantsResearch = stemgenResearchParam != nullptr &&
+        stemgenResearchParam->load(std::memory_order_relaxed) > 0.5f;
+    const bool neuralSelected = neuralEnabled && !bypassRequested && !tracking &&
+        engineModeParam->load(std::memory_order_relaxed) > 0.5f &&
+        (availableNeuralMode() == (wantsResearch ? 2 : 1));
     strengthSmoothing.setTargetValue(neuralStrengthParam->load(std::memory_order_relaxed));
     const bool monoMode = modeParam->load() < 0.5f || channels == 1;
     monoBlend.setTargetValue(monoMode ? 1.0f : 0.0f);
@@ -202,7 +282,8 @@ void SkellSeparatorAudioProcessor::processAudio(juce::AudioBuffer<float>& b, boo
             // Conservative correction guard applies ONLY to synthetic-trained
             // TinyVocalNet, not the separately licensed RNNoise backend.
 #if defined(SKELL_WITH_TINY_VOCAL) && SKELL_WITH_TINY_VOCAL
-            neuralBlend.apply(stemSamples, available && neuralSelected, neuralVoice, true);
+            neuralBlend.apply(stemSamples, available && neuralSelected, neuralVoice,
+                              availableNeuralMode() == 1);
 #else
             neuralBlend.apply(stemSamples, available && neuralSelected, neuralVoice);
 #endif
@@ -212,11 +293,15 @@ void SkellSeparatorAudioProcessor::processAudio(juce::AudioBuffer<float>& b, boo
         }
         ++neuralSampleIndex;
         const auto out = mixer.mix(stemSamples, rawDelayed);
-        l[i] = out[0];
-        if (r != nullptr) r[i] = out[1];
+        // Keep the classical history warm so exiting live monitoring does not
+        // resume with stale FFT state. Monitor is genuinely zero PDC: its
+        // output comes directly from THIS input sample, never delayed stems.
+        const auto monitor = skell::TrackingMonitor::sample(rawLeft, rawRight);
+        l[i] = tracking ? monitor[0] : out[0];
+        if (r != nullptr) r[i] = tracking ? monitor[1] : out[1];
         // DAW floating-point buses can exceed 0 dBFS without numerical
         // clipping. Show the user; do not insert an unrequested limiter.
-        overZero |= std::abs(out[0]) > 1.0f || (r != nullptr && std::abs(out[1]) > 1.0f);
+        overZero |= std::abs(l[i]) > 1.0f || (r != nullptr && std::abs(r[i]) > 1.0f);
     }
     for (int ch = 2; ch < b.getNumChannels(); ++ch) b.clear(ch, 0, n);
     if (overZero) overZeroBlocks.fetch_add(1, std::memory_order_relaxed);
@@ -224,6 +309,15 @@ void SkellSeparatorAudioProcessor::processAudio(juce::AudioBuffer<float>& b, boo
     inputActivity.store(0.80f * inputActivity.load(std::memory_order_relaxed)
                         + 0.20f * juce::jlimit(0.0f, 1.0f, peak * 2.0f),
                         std::memory_order_relaxed);
+}
+
+void SkellSeparatorAudioProcessor::setTrackingMode(bool enabled)
+{
+    // Called from the menu/message thread, never the audio callback. Host PDC
+    // must match the actual path: no fake 0-ms monitoring with 2880-sample PDC.
+    if (trackingMode.exchange(enabled, std::memory_order_acq_rel) != enabled)
+        setLatencySamples(skell::TrackingMonitor::reportedLatency(
+            enabled, LatencyAlignedStems::skellLatency()));
 }
 
 void SkellSeparatorAudioProcessor::resetAllParameters()
@@ -235,6 +329,7 @@ void SkellSeparatorAudioProcessor::resetAllParameters()
         p->endChangeGesture();
     }
     presetIndex.store(0);
+    setTrackingMode(false);
 }
 
 void SkellSeparatorAudioProcessor::usePreset(int index)
@@ -274,6 +369,7 @@ void SkellSeparatorAudioProcessor::getStateInformation(juce::MemoryBlock& dest)
     state.setProperty("scale", uiScale.load(), nullptr);
     state.setProperty("preset", presetIndex.load(), nullptr);
     state.setProperty("circularKnobs", circularKnobs.load(), nullptr);
+    state.setProperty("trackingMode", isTrackingMode(), nullptr);
     if (auto xml = state.createXml()) copyXmlToBinary(*xml, dest);
 }
 
@@ -286,6 +382,7 @@ void SkellSeparatorAudioProcessor::setStateInformation(const void* data, int siz
             setUiScale(static_cast<int>(tree.getProperty("scale", 75)));
             presetIndex.store(juce::jlimit(0, 3, static_cast<int>(tree.getProperty("preset", 0))));
             circularKnobs.store(static_cast<bool>(tree.getProperty("circularKnobs", false)));
+            setTrackingMode(static_cast<bool>(tree.getProperty("trackingMode", false)));
             apvts.replaceState(tree);
         }
 }
