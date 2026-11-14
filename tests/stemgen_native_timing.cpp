@@ -19,7 +19,9 @@ int main(int argc, char** argv) {
     }
     const int hops = argc == 3 ? std::atoi(argv[2]) : 1200;
     if (hops < 200 || hops > 20000) return 2;
+    std::fprintf(stderr, "[Skell timing] before model factory\n"); std::fflush(stderr);
     auto model = skell::createStemgenRTHopModel(argv[1]);
+    std::fprintf(stderr, "[Skell timing] after model factory\n"); std::fflush(stderr);
     if (!model || !model->valid()) {
         std::fprintf(stderr, "ERROR: no valid, hash-verified, locally supplied StemgenRT graph\n");
         return 3;
@@ -35,7 +37,9 @@ int main(int argc, char** argv) {
                 input[static_cast<size_t>(ch)][static_cast<size_t>(j)] =
                     static_cast<float>(.11 * std::sin(.004 * (i*skell::stemgenHopSize+j) + ch*.3));
         const auto start = std::chrono::steady_clock::now();
+        if (i == 0) { std::fprintf(stderr, "[Skell timing] first model hop\n"); std::fflush(stderr); }
         const bool good = model->infer(input, out);
+        if (i == 0) { std::fprintf(stderr, "[Skell timing] first model hop returned\n"); std::fflush(stderr); }
         const auto stop = std::chrono::steady_clock::now();
         if (i > 0 && !good) ++rejected;
         for (const auto& channel : out)

@@ -11,6 +11,12 @@
 #include <memory>
 #include <string>
 #include <vector>
+#if defined(SKELL_STEMGEN_TIMING_DIAGNOSTICS) && SKELL_STEMGEN_TIMING_DIAGNOSTICS
+#include <cstdio>
+#define SKELL_ORT_TRACE(text) do { std::fprintf(stderr, "[Skell ORT] %s\n", text); std::fflush(stderr); } while (false)
+#else
+#define SKELL_ORT_TRACE(text) do {} while (false)
+#endif
 
 namespace {
 using Shape = std::vector<std::int64_t>;
@@ -55,6 +61,7 @@ public:
     explicit OrtHopModel(const char* path)
         : env_(ORT_LOGGING_LEVEL_WARNING, "SkellSeparator-Research"),
           memory_(Ort::MemoryInfo::CreateCpu(OrtArenaAllocator, OrtMemTypeDefault)) {
+        SKELL_ORT_TRACE("env and allocator constructed");
         const auto file = juce::File(juce::String::fromUTF8(path));
         // Only the exact documented model size is accepted. The local setup
         // script additionally verifies SHA-256 before installing it.
@@ -63,19 +70,23 @@ public:
         // may replace files after the separate install-time hash check.
         juce::FileInputStream stream(file);
         if (!stream.openedOk()) return;
+        SKELL_ORT_TRACE("model bytes validated; hashing");
         const juce::SHA256 digest(stream);
         if (digest.toHexString() != "0a49388dd2a47986ab9a161c8764c22853b4d601c188ac052eb530f076d513c7") return;
+        SKELL_ORT_TRACE("SHA-256 passed; create session options");
         Ort::SessionOptions options;
         options.SetIntraOpNumThreads(1);
         options.SetInterOpNumThreads(1);
         options.SetExecutionMode(ExecutionMode::ORT_SEQUENTIAL);
         options.DisableMemPattern();
         options.SetGraphOptimizationLevel(GraphOptimizationLevel::ORT_ENABLE_ALL);
+        SKELL_ORT_TRACE("options ready; constructing model session");
 #if JUCE_WINDOWS
         session_ = std::make_unique<Ort::Session>(env_, file.getFullPathName().toWideCharPointer(), options);
 #else
         session_ = std::make_unique<Ort::Session>(env_, file.getFullPathName().toRawUTF8(), options);
 #endif
+        SKELL_ORT_TRACE("model session ready; validating inputs/outputs");
         if (session_->GetInputCount() != kTensorCount || session_->GetOutputCount() != kTensorCount) return;
         Ort::AllocatorWithDefaultOptions allocator;
         for (std::size_t i = 0; i < kTensorCount; ++i) {
@@ -90,6 +101,7 @@ public:
                 inputInfo.GetShape() != kInputShapes[i] ||
                 outputInfo.GetShape() != kOutputShapes[i]) return;
         }
+        SKELL_ORT_TRACE("model I/O metadata valid; create tensor buffers");
         inputTensors_.reserve(kTensorCount);
         outputTensors_.reserve(kTensorCount);
         for (std::size_t i = 0; i < kTensorCount; ++i) {
@@ -103,6 +115,7 @@ public:
                 kOutputShapes[i].data(), kOutputShapes[i].size()));
         }
         ready_ = true;
+        SKELL_ORT_TRACE("model initialized and ready");
     }
 
     bool valid() const noexcept override { return ready_; }
@@ -118,6 +131,7 @@ public:
         for (std::size_t ch = 0; ch < 2; ++ch)
             for (std::size_t i = 0; i < skell::stemgenHopSize; ++i)
                 inputData_[0][ch * skell::stemgenHopSize + i] = input[ch][i];
+        if (!primed_) SKELL_ORT_TRACE("first inference begins");
         try {
             session_->Run(Ort::RunOptions{nullptr}, kInputNames.data(), inputTensors_.data(),
                           kTensorCount, kOutputNames.data(), outputTensors_.data(), kTensorCount);
@@ -126,6 +140,7 @@ public:
         } catch (...) {
             ready_ = false; return false;
         }
+        if (!primed_) SKELL_ORT_TRACE("first inference complete; checking state");
         // Validate returned states BEFORE committing them. Never persist NaNs.
         for (std::size_t i = 0; i < kTensorCount; ++i)
             for (const float value : outputData_[i])

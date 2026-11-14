@@ -148,6 +148,7 @@ if(SKELL_BUILD_STEMGEN_HOP_TIMING)
     if(NOT SKELL_ENABLE_STEMGENRT)
         message(FATAL_ERROR "SKELL_BUILD_STEMGEN_HOP_TIMING requires SKELL_ENABLE_STEMGENRT=ON")
     endif()
+    target_compile_definitions(SkellSeparator PRIVATE SKELL_STEMGEN_TIMING_DIAGNOSTICS=1)
     add_executable(SkellStemgenHopTiming tests/stemgen_native_timing.cpp)
     target_link_libraries(SkellStemgenHopTiming PRIVATE
         SkellSeparator Threads::Threads
