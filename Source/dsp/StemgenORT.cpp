@@ -56,11 +56,25 @@ std::size_t count(const Shape& shape) {
     return n;
 }
 
+// Separate the two ONNX wrapper initializers so a native Windows crash can be
+// attributed to its actual call site (and not mislabeled as model inference).
+Ort::Env initialiseEnvironment() {
+    SKELL_ORT_TRACE("before ONNX environment constructor");
+    auto env = Ort::Env(ORT_LOGGING_LEVEL_WARNING, "SkellSeparator-Research");
+    SKELL_ORT_TRACE("ONNX environment constructed");
+    return env;
+}
+Ort::MemoryInfo initialiseMemoryInfo() {
+    SKELL_ORT_TRACE("before ONNX memory info allocation");
+    auto memory = Ort::MemoryInfo::CreateCpu(OrtArenaAllocator, OrtMemTypeDefault);
+    SKELL_ORT_TRACE("ONNX memory info allocated");
+    return memory;
+}
 class OrtHopModel final : public skell::StemgenHopModel {
 public:
     explicit OrtHopModel(const char* path)
-        : env_(ORT_LOGGING_LEVEL_WARNING, "SkellSeparator-Research"),
-          memory_(Ort::MemoryInfo::CreateCpu(OrtArenaAllocator, OrtMemTypeDefault)) {
+        : env_(initialiseEnvironment()),
+          memory_(initialiseMemoryInfo()) {
         SKELL_ORT_TRACE("env and allocator constructed");
         const auto file = juce::File(juce::String::fromUTF8(path));
         // Only the exact documented model size is accepted. The local setup
@@ -170,6 +184,20 @@ private:
 namespace skell {
 std::unique_ptr<StemgenHopModel> createStemgenRTHopModel(const char* localModelPath) {
     if (localModelPath == nullptr || *localModelPath == '\0') return {};
+    // The C API is probed before any C++ wrapper touches it. If the SDK header
+    // and loaded runtime do not share this API version, fail closed instead of
+    // dereferencing a null OrtApi pointer inside a wrapper constructor.
+    SKELL_ORT_TRACE("factory: probing ONNX C API");
+    const auto* base = OrtGetApiBase();
+    if (base == nullptr) return {};
+    const auto* api = base->GetApi(ORT_API_VERSION);
+#if defined(SKELL_STEMGEN_TIMING_DIAGNOSTICS) && SKELL_STEMGEN_TIMING_DIAGNOSTICS
+    std::fprintf(stderr, "[Skell ORT] runtime=%s requested_api=%u api=%s\n",
+                 base->GetVersionString(), static_cast<unsigned>(ORT_API_VERSION),
+                 api == nullptr ? "MISSING" : "available");
+    std::fflush(stderr);
+#endif
+    if (api == nullptr) return {};
     try {
         auto model = std::make_unique<OrtHopModel>(localModelPath);
         return model->valid() ? std::move(model) : nullptr;
