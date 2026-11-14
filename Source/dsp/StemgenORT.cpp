@@ -73,7 +73,7 @@ Ort::MemoryInfo initialiseMemoryInfo() {
 }
 class OrtHopModel final : public skell::StemgenHopModel {
 public:
-    explicit OrtHopModel(const char* path)
+    explicit OrtHopModel(const char* path, int researchIntraOpThreads)
         : env_(initialiseEnvironment()),
           memory_(initialiseMemoryInfo()) {
         SKELL_ORT_TRACE("env and allocator constructed");
@@ -90,7 +90,8 @@ public:
         if (digest.toHexString() != "0a49388dd2a47986ab9a161c8764c22853b4d601c188ac052eb530f076d513c7") return;
         SKELL_ORT_TRACE("SHA-256 passed; create session options");
         Ort::SessionOptions options;
-        options.SetIntraOpNumThreads(1);
+        // Default/live remains 1 thread; controlled research-only timing can explore 2/3.
+        options.SetIntraOpNumThreads(std::clamp(researchIntraOpThreads, 1, 3));
         options.SetInterOpNumThreads(1);
         options.SetExecutionMode(ExecutionMode::ORT_SEQUENTIAL);
         options.DisableMemPattern();
@@ -183,7 +184,7 @@ private:
 } // anonymous namespace
 
 namespace skell {
-std::unique_ptr<StemgenHopModel> createStemgenRTHopModel(const char* localModelPath) {
+std::unique_ptr<StemgenHopModel> createStemgenRTHopModel(const char* localModelPath, int researchIntraOpThreads) {
     if (localModelPath == nullptr || *localModelPath == '\0') return {};
     // The C API is probed before any C++ wrapper touches it. If the SDK header
     // and loaded runtime do not share this API version, fail closed instead of
@@ -207,7 +208,7 @@ std::unique_ptr<StemgenHopModel> createStemgenRTHopModel(const char* localModelP
 #endif
     if (api == nullptr) return {};
     try {
-        auto model = std::make_unique<OrtHopModel>(localModelPath);
+        auto model = std::make_unique<OrtHopModel>(localModelPath, researchIntraOpThreads);
         return model->valid() ? std::move(model) : nullptr;
     } catch (...) {
         // Unsupported/missing runtime or graph: fail closed to Classical.
@@ -223,7 +224,7 @@ std::unique_ptr<NeuralFrameBackend> createStemgenRTBackend(const char* localMode
 }
 #else
 namespace skell {
-std::unique_ptr<StemgenHopModel> createStemgenRTHopModel(const char*) { return {}; }
+std::unique_ptr<StemgenHopModel> createStemgenRTHopModel(const char*, int) { return {}; }
 std::unique_ptr<NeuralFrameBackend> createStemgenRTBackend(const char*) { return {}; }
 }
 #endif

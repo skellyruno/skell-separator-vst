@@ -80,8 +80,13 @@ jobs:
           $dll = Join-Path $exe.DirectoryName 'onnxruntime.dll'
           Copy-Item $sdk $dll -Force
           if ((Get-FileHash $sdk -Algorithm SHA256).Hash -ne (Get-FileHash $dll -Algorithm SHA256).Hash) { throw 'Runtime DLL staging mismatch' }
-          & $exe.FullName "$PWD/independent.onnx" 1200
-          if ($LASTEXITCODE -ne 0) { throw "Real graph benchmark rejected inference: $LASTEXITCODE" }
+          # Compare CPU thread policies on the same runner/graph.
+          # Single-hop inference timing is not a host scheduling certification.
+          foreach ($threads in @(1, 2, 3)) {
+            Write-Host "===== StemgenRT real model, intra-op threads: $threads ====="
+            & $exe.FullName "$PWD/independent.onnx" 1200 $threads
+            if ($LASTEXITCODE -ne 0) { throw "Real graph benchmark rejected inference (threads $threads): $LASTEXITCODE" }
+          }
       - name: Remove noncommercial model from workspace after research
         if: always()
         shell: pwsh

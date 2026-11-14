@@ -13,14 +13,16 @@
 #include <vector>
 
 int main(int argc, char** argv) {
-    if (argc < 2 || argc > 3) {
-        std::fprintf(stderr, "Usage: SkellStemgenHopTiming verified-independent.onnx [hops]\n");
+    if (argc < 2 || argc > 4) {
+        std::fprintf(stderr, "Usage: SkellStemgenHopTiming verified-independent.onnx [hops] [threads]\n");
         return 2;
     }
     const int hops = argc == 3 ? std::atoi(argv[2]) : 1200;
     if (hops < 200 || hops > 20000) return 2;
+    const int threads = argc == 4 ? std::atoi(argv[3]) : 1;
+    if (threads < 1 || threads > 3) return 2;
     std::fprintf(stderr, "[Skell timing] before model factory\n"); std::fflush(stderr);
-    auto model = skell::createStemgenRTHopModel(argv[1]);
+    auto model = skell::createStemgenRTHopModel(argv[1], threads);
     std::fprintf(stderr, "[Skell timing] after model factory\n"); std::fflush(stderr);
     if (!model || !model->valid()) {
         std::fprintf(stderr, "ERROR: no valid, hash-verified, locally supplied StemgenRT graph\n");
@@ -59,7 +61,7 @@ int main(int argc, char** argv) {
     const double mean=std::accumulate(us.begin(),us.end(),0.) / us.size();
     const double hopUs=hopNs / 1000.;
     const auto over=std::count_if(us.begin(),us.end(),[&](double t){return t>hopUs;});
-    std::printf("NATIVE REAL MODEL | 44.1k stereo | 128 samples/hop | %d measured hops\n",hops);
+    std::printf("NATIVE REAL MODEL | 44.1k stereo | 128 samples/hop | %d measured hops | intra-op threads %d\n",hops,threads);
     std::printf("Mean %.1f us, p50 %.1f us, p95 %.1f us, p99 %.1f us, max %.1f us\n",
                 mean, percentile(.50), percentile(.95), percentile(.99), us.back());
     std::printf("Hop deadline %.1f us; inference hops above deadline %lld / %d (%.2f%%)\n",
