@@ -149,7 +149,7 @@ void HeaderBar::resized()
     place(menu, 973, 39, 46, 38);
 }
 
-void HeaderBar::refresh(bool active)
+void HeaderBar::refresh(bool /*active*/)
 {
     const auto over = processor.overZeroBlocks.load(std::memory_order_relaxed);
     if (over > lastOverZeroBlocks) overloadHold = 45;
