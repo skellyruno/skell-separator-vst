@@ -17,7 +17,7 @@ int main(int argc, char** argv) {
         std::fprintf(stderr, "Usage: SkellStemgenHopTiming verified-independent.onnx [hops] [threads]\n");
         return 2;
     }
-    const int hops = argc == 3 ? std::atoi(argv[2]) : 1200;
+    const int hops = argc >= 3 ? std::atoi(argv[2]) : 1200;
     if (hops < 200 || hops > 20000) return 2;
     const int threads = argc == 4 ? std::atoi(argv[3]) : 1;
     if (threads < 1 || threads > 3) return 2;

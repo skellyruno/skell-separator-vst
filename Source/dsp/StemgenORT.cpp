@@ -103,19 +103,49 @@ public:
         session_ = std::make_unique<Ort::Session>(env_, file.getFullPathName().toRawUTF8(), options);
 #endif
         SKELL_ORT_TRACE("model session ready; validating inputs/outputs");
-        if (session_->GetInputCount() != kTensorCount || session_->GetOutputCount() != kTensorCount) return;
+        const auto inputCount = session_->GetInputCount();
+        const auto outputCount = session_->GetOutputCount();
+        if (inputCount != kTensorCount || outputCount != kTensorCount) {
+#if defined(SKELL_STEMGEN_TIMING_DIAGNOSTICS) && SKELL_STEMGEN_TIMING_DIAGNOSTICS
+            std::fprintf(stderr, "[Skell ORT] wrong tensor counts: inputs %zu / %zu, outputs %zu / %zu\n",
+                inputCount, kTensorCount, outputCount, kTensorCount);
+#endif
+            return;
+        }
         Ort::AllocatorWithDefaultOptions allocator;
         for (std::size_t i = 0; i < kTensorCount; ++i) {
             const auto inName = session_->GetInputNameAllocated(i, allocator);
             const auto outName = session_->GetOutputNameAllocated(i, allocator);
-            if (std::string(inName.get()) != kInputNames[i] ||
-                std::string(outName.get()) != kOutputNames[i]) return;
+            const char* actualInput = inName.get() != nullptr ? inName.get() : "";
+            const char* actualOutput = outName.get() != nullptr ? outName.get() : "";
+            if (std::string(actualInput) != kInputNames[i] ||
+                std::string(actualOutput) != kOutputNames[i]) {
+#if defined(SKELL_STEMGEN_TIMING_DIAGNOSTICS) && SKELL_STEMGEN_TIMING_DIAGNOSTICS
+                std::fprintf(stderr, "[Skell ORT] input/output name mismatch at %zu: in=%s expected=%s; out=%s expected=%s\n",
+                    i, actualInput, kInputNames[i], actualOutput, kOutputNames[i]);
+#endif
+                return;
+            }
             const auto inputInfo = session_->GetInputTypeInfo(i).GetTensorTypeAndShapeInfo();
             const auto outputInfo = session_->GetOutputTypeInfo(i).GetTensorTypeAndShapeInfo();
+            const auto actualInputShape = inputInfo.GetShape();
+            const auto actualOutputShape = outputInfo.GetShape();
             if (inputInfo.GetElementType() != ONNX_TENSOR_ELEMENT_DATA_TYPE_FLOAT ||
                 outputInfo.GetElementType() != ONNX_TENSOR_ELEMENT_DATA_TYPE_FLOAT ||
-                inputInfo.GetShape() != kInputShapes[i] ||
-                outputInfo.GetShape() != kOutputShapes[i]) return;
+                actualInputShape != kInputShapes[i] ||
+                actualOutputShape != kOutputShapes[i]) {
+#if defined(SKELL_STEMGEN_TIMING_DIAGNOSTICS) && SKELL_STEMGEN_TIMING_DIAGNOSTICS
+                std::fprintf(stderr, "[Skell ORT] type/shape mismatch at tensor %zu: in type %d, out type %d; input shape",
+                    i, static_cast<int>(inputInfo.GetElementType()), static_cast<int>(outputInfo.GetElementType()));
+                for (const auto dim : actualInputShape) std::fprintf(stderr, " %lld", static_cast<long long>(dim));
+                std::fprintf(stderr, "; expected");
+                for (const auto dim : kInputShapes[i]) std::fprintf(stderr, " %lld", static_cast<long long>(dim));
+                std::fprintf(stderr, "; output shape");
+                for (const auto dim : actualOutputShape) std::fprintf(stderr, " %lld", static_cast<long long>(dim));
+                std::fprintf(stderr, "\n");
+#endif
+                return;
+            }
         }
         SKELL_ORT_TRACE("model I/O metadata valid; create tensor buffers");
         inputTensors_.reserve(kTensorCount);
