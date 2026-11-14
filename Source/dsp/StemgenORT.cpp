@@ -126,8 +126,14 @@ public:
 #endif
                 return;
             }
-            const auto inputInfo = session_->GetInputTypeInfo(i).GetTensorTypeAndShapeInfo();
-            const auto outputInfo = session_->GetOutputTypeInfo(i).GetTensorTypeAndShapeInfo();
+            // Keep the owning TypeInfo objects alive while examining tensor
+            // metadata. GetTensorTypeAndShapeInfo() borrows from their handles:
+            // chaining on temporaries caused use-after-free and sporadic
+            // UNDEFINED (type 0) inputs on Windows.
+            const auto inputType = session_->GetInputTypeInfo(i);
+            const auto outputType = session_->GetOutputTypeInfo(i);
+            const auto inputInfo = inputType.GetTensorTypeAndShapeInfo();
+            const auto outputInfo = outputType.GetTensorTypeAndShapeInfo();
             const auto actualInputShape = inputInfo.GetShape();
             const auto actualOutputShape = outputInfo.GetShape();
             if (inputInfo.GetElementType() != ONNX_TENSOR_ELEMENT_DATA_TYPE_FLOAT ||
