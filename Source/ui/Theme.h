@@ -13,7 +13,8 @@ namespace Theme
     inline const juce::Colour background { 0xff141416 };
     inline const juce::Colour text { 0xffc8c8cc };
     inline const juce::Colour textDim { 0xff8b8b91 };
-    inline const juce::Colour accent { 0xffff4a14 };
+    inline const juce::Colour accent { 0xff39ff3a };
+    inline const juce::Colour meterAccent { 0xffff4a14 }; // bottom meters deliberately retain orange
     inline const juce::Colour ticks { 0xffececee };
     inline const juce::Colour ticksOff { 0xff55565c };
     inline const juce::Colour navy { 0xff2a3050 };

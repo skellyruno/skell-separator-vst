@@ -54,7 +54,7 @@ void StemMeter::paint(juce::Graphics& g)
         const auto amount = juce::jlimit(0.f, 1.f, liveLevel);
         for (int i = 0; i < 20; ++i) {
             const bool lit = static_cast<float>(i) < amount * 20.f;
-            g.setColour(lit ? Theme::accent.withAlpha(0.82f)
+            g.setColour(lit ? Theme::meterAccent.withAlpha(0.82f)
                             : Theme::textDim.withAlpha(0.24f));
             g.fillRoundedRectangle(3.0f + i * 8.15f, 22.f, 5.25f, 11.f, 1.5f);
         }

@@ -84,7 +84,7 @@ public:
     bool isTrackingMode() const noexcept { return trackingMode.load(std::memory_order_relaxed); }
     void usePreset(int index);
     int getUiScale() const noexcept { return uiScale.load(); }
-    void setUiScale(int scale) noexcept { uiScale.store(juce::jlimit(75, 150, scale)); }
+    void setUiScale(int scale) noexcept { uiScale.store(juce::jlimit(56, 150, scale)); }
     int getPresetIndex() const noexcept { return presetIndex.load(); }
     void setKnobCircular(bool c) noexcept { circularKnobs.store(c); }
     bool getKnobCircular() const noexcept { return circularKnobs.load(); }
@@ -113,7 +113,7 @@ private:
     std::atomic<float>* trackTailsParam = nullptr;
     juce::SmoothedValue<float, juce::ValueSmoothingTypes::Linear> strengthSmoothing;
     std::atomic<bool> trackingMode { false };
-    std::atomic<int> uiScale { 75 }, presetIndex { 0 };
+    std::atomic<int> uiScale { 56 }, presetIndex { 0 };
     std::atomic<bool> circularKnobs { false };
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(SkellSeparatorAudioProcessor)
 };

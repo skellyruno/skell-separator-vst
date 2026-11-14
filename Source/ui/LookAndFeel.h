@@ -7,6 +7,8 @@ public:
     SeparatorLookAndFeel();
     void drawLabel(juce::Graphics&, juce::Label&) override;
     void drawPopupMenuBackground(juce::Graphics&, int, int) override;
+    void drawPopupMenuSectionHeader(juce::Graphics&, const juce::Rectangle<int>&,
+                                    const juce::String&) override;
     void drawPopupMenuItem(juce::Graphics&, const juce::Rectangle<int>&,
                            bool, bool, bool, bool, bool, const juce::String&,
                            const juce::String&, const juce::Drawable*, const juce::Colour*) override;

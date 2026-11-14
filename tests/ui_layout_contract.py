@@ -31,7 +31,7 @@ def intersects(a, b):
 controls = {name: bounds(header, name) for name in ("mode", "engine", "bypass", "previous", "next", "menu")}
 for name, rect in controls.items():
     assert inside(rect, (0, 0, base[0], header_h)), name
-# All header interactions must be independently targetable at 75% size.
+# All header interactions must be independently targetable at 56% size.
 for a in controls:
     for b in controls:
         if a < b:
@@ -57,9 +57,9 @@ for center in centers:
 # Track the real processor and editor contract, not a second invented layout.
 assert "processor.setUiScale(juce::roundToInt(100.0f * getWidth() / Theme::designW))" in editor
 assert "constrainer.setFixedAspectRatio(Theme::designW / Theme::designH)" in editor
-assert "constrainer.setSizeLimits(785, 448, 1571, 896)" in editor
+assert "constrainer.setSizeLimits(586, 334, 1571, 896)" in editor
 assert "NormalisableRange<float>(-40.0f, 40.0f, 0.1f), 0.0f" in processor
-for size in ((785, 448), (1047, 597), (1571, 896)):
+for size in ((586, 334), (785, 448), (1047, 597), (1571, 896)):
     sx, sy = size[0] / base[0], size[1] / base[1]
     for name, (x,y,w,h) in controls.items():
         target = (round(x*sx), round(y*sy), round(w*sx), round(h*sy))
@@ -77,4 +77,8 @@ assert 'LIVE / CLEANUP ON' in header
 assert 'LIVE — Clean / Gate / Tails' in editor
 assert 'SEPARATE — Ambience / Voice / Reverb' in editor
 assert '"trackGate"' in processor
-print("Static JUCE geometry/default/resize/engine-exit contract passed at 75%, 100%, 150% (not a render test)")
+assert "withTargetComponent(header.getMenuAnchor())" in editor
+assert "for (int pct : { 56, 75, 100, 125, 150 })" in editor
+assert "inline const juce::Colour accent { 0xff39ff3a }" in (root / "Source/ui/Theme.h").read_text()
+assert "Theme::meterAccent" in (root / "Source/ui/StemMeter.cpp").read_text()
+print("Static JUCE geometry/default/resize/menu/color contract passed at 56%, 75%, 100%, 150% (not a render test)")

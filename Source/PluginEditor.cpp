@@ -12,7 +12,7 @@ SkellSeparatorAudioProcessorEditor::SkellSeparatorAudioProcessorEditor(SkellSepa
     addAndMakeVisible(voice);
     addAndMakeVisible(reverb);
     header.onMenu = [this] { showMenu(); };
-    constrainer.setSizeLimits(785, 448, 1571, 896);
+    constrainer.setSizeLimits(586, 334, 1571, 896);
     constrainer.setFixedAspectRatio(Theme::designW / Theme::designH);
     setConstrainer(&constrainer);
     setResizable(true, true);
@@ -180,13 +180,13 @@ void SkellSeparatorAudioProcessorEditor::showMenu()
     modes.addItem(21, "Circular Drag", true, processor.getKnobCircular());
     popup.addSubMenu("Knob Interaction", modes);
     juce::PopupMenu scale;
-    for (int pct : { 75, 100, 125, 150 })
+    for (int pct : { 56, 75, 100, 125, 150 })
         scale.addItem(100 + pct, juce::String(pct) + "%", true, processor.getUiScale() == pct);
     popup.addSubMenu("Scale", scale);
     popup.addSeparator();
     popup.addItem(50, "About / Model Status");
     juce::Component::SafePointer<SkellSeparatorAudioProcessorEditor> safe(this);
-    popup.showMenuAsync(juce::PopupMenu::Options().withTargetComponent(&header),
+    popup.showMenuAsync(juce::PopupMenu::Options().withTargetComponent(header.getMenuAnchor()),
         [safe](int result)
         {
             if (safe == nullptr) return;

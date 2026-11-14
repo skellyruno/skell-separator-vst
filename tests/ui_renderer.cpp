@@ -29,6 +29,9 @@ int main(int argc, char** argv) {
         options.project = "Skell Separator actual JUCE PluginEditor 1.13";
         options.minimumColours = 12;
         options.scenes = {
+            {"micro-classical", 586, 334, 0, 0, false},
+            {"micro-live", 586, 334, 0, 5, false},
+            {"micro-guided-tour", 586, 334, 0, 4, false},
             {"compact-classical", 785, 448, 0, 0, false},
             {"compact-bypass", 785, 448, 0, 1, false},
             {"compact-voice-solo", 785, 448, 0, 2, false},
@@ -93,6 +96,8 @@ int main(int argc, char** argv) {
             return errors;
         };
         options.mustDiffer = {
+            {"micro-classical", "micro-live"},
+            {"micro-classical", "micro-guided-tour"},
             {"compact-classical", "compact-bypass"},
             {"compact-classical", "compact-voice-solo"},
             {"compact-classical", "compact-neural"},

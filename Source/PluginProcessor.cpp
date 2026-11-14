@@ -379,7 +379,7 @@ void SkellSeparatorAudioProcessor::setStateInformation(const void* data, int siz
         if (xml->hasTagName(apvts.state.getType()))
         {
             const auto tree = juce::ValueTree::fromXml(*xml);
-            setUiScale(static_cast<int>(tree.getProperty("scale", 75)));
+            setUiScale(static_cast<int>(tree.getProperty("scale", 56)));
             presetIndex.store(juce::jlimit(0, 3, static_cast<int>(tree.getProperty("preset", 0))));
             circularKnobs.store(static_cast<bool>(tree.getProperty("circularKnobs", false)));
             setTrackingMode(static_cast<bool>(tree.getProperty("trackingMode", false)));

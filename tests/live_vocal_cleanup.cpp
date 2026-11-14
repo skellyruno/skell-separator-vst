@@ -104,6 +104,44 @@ int main() {
         std::printf("live gate %d Hz: gate-only attenuation %.2f dB, onset %d samples, tails tight %.7f / long %.7f\n",
                     sampleRate, gateReduction, gateOpen, tight, natural);
 
+        // Two short vocal phrases with background room noise: gate must open
+        // quickly for each onset, release during the gap, and retain a more
+        // natural decay when Tails is increased. This is synthetic, not an
+        // invented numerical copy of the Deuce Fruity Limiter settings.
+        auto phraseEnvelope = [&](float tails) {
+            skell::LiveVocalCleanup x;
+            x.prepare(sampleRate);
+            x.setControls(0.f, 0.85f, tails);
+            const int warmup = sampleRate;
+            for (int i = 0; i < warmup; ++i)
+                x.process(0.0012f, 0.0012f);
+            float openAt = 0.f;
+            int firstOnset = -1, secondOnset = -1;
+            // First 80ms syllable, then 170ms room gap and another 80ms syllable.
+            const int syllable = static_cast<int>(sampleRate * 0.080);
+            const int gap = static_cast<int>(sampleRate * 0.170);
+            for (int i = 0; i < syllable + gap + syllable; ++i) {
+                const bool voice = i < syllable || i >= syllable + gap;
+                const float raw = voice ? 0.28f * std::sin(2.0 * pi * 320.0 * i / sampleRate)
+                                        : 0.0012f;
+                const auto output = x.process(raw, raw);
+                if (voice && std::abs(raw) > 0.12f && std::abs(output[0]) >= 0.95f * std::abs(raw)) {
+                    if (i < syllable && firstOnset < 0) firstOnset = i;
+                    if (i >= syllable + gap && secondOnset < 0) secondOnset = i - syllable - gap;
+                }
+                if (i == syllable + gap - 1) openAt = output[0];
+            }
+            assert(firstOnset >= 0 && firstOnset < sampleRate / 1000);
+            assert(secondOnset >= 0 && secondOnset < sampleRate / 1000);
+            return openAt;
+        };
+        const float defaultGap = phraseEnvelope(0.35f);
+        const float extendedGap = phraseEnvelope(1.f);
+        assert(defaultGap < 0.0008f); // between-phrase noise comes back down
+        assert(extendedGap > defaultGap * 1.2f);
+        std::printf("LIVE %d Hz phrase gate: default gap %.7f, long-tail gap %.7f\n",
+                    sampleRate, defaultGap, extendedGap);
+
         // Isolated-hiss fixture followed by sustained vowel + hiss: Clean
         // must still reduce at least some high-band noise while Gate is OPEN,
         // rather than acting as a second all-or-nothing broadband gate.

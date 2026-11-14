@@ -14,15 +14,15 @@ public:
                           ? sampleRate : 48000.0;
         sampleRateHz = static_cast<float>(rate);
         attack = onePole(rate, 0.00045);
-        detectorRelease = onePole(rate, 0.025);
+        detectorRelease = onePole(rate, 0.014);
         floorRise = onePole(rate, 1.6);
         floorFall = onePole(rate, 0.18);
         bandAttack = onePole(rate, 0.0018);
         bandRelease = onePole(rate, 0.055);
         bandOpen = onePole(rate, 0.00035);
         bandClose = onePole(rate, 0.045);
-        gateOpen = onePole(rate, 0.0003);
-        gateClose = onePole(rate, 0.19);
+        gateOpen = onePole(rate, 0.00020);
+        gateClose = onePole(rate, 0.14);
         cleanBlendPole = onePole(rate, 0.004);
         constexpr std::array<double, splitCount> frequencies {
             150.0, 360.0, 750.0, 1500.0, 2600.0, 4300.0, 7200.0
@@ -43,6 +43,7 @@ public:
         gateGain = 1.f;
         cleanBlend = 0.f;
         hold = 0;
+        gateVoiceOpen = false;
         transientGuard = 0;
         lastEffectiveGain = 1.f;
         for (auto& channel : highpass)
@@ -60,8 +61,10 @@ public:
         gateThresholdMultiplier = 1.8f + gateAmount * 7.f;
         gateMinGain = std::pow(10.f, -(12.f + gateAmount * 42.f) / 20.f);
         // Tails affects the broadband gate, never the adaptive noise profile.
-        gateReleaseFactor = std::pow(gateClose, 2.5f - 1.85f * tails);
-        holdSamples = static_cast<int>(sampleRateHz * (0.018f + tails * 0.17f));
+        // A faster close at short Tails; longer values still protect breaths.
+        // Control-rate smoothing only; no extra lookahead or UI parameters.
+        gateReleaseFactor = std::pow(gateClose, 2.3f - 1.45f * tails);
+        holdSamples = static_cast<int>(sampleRateHz * (0.012f + tails * 0.135f));
     }
 
     std::array<float, 2> process(float left, float right) noexcept {
@@ -139,17 +142,26 @@ public:
             std::max(noiseFloor * gateThresholdMultiplier, 0.003f * gateAmount),
             0.00013f, 0.05f);
         if (gateAmount > 0.f) {
-            const bool voice = detector >= gateThreshold || level >= gateThreshold * 1.4f;
-            if (voice) hold = holdSamples;
-            else if (hold > 0) --hold;
+            // Hysteresis stops gate flutter on low-level syllables. Full
+            // detector onset opens in <1ms; release can never learn vocals.
+            const bool voiceOnset = detector >= gateThreshold * 1.12f
+                || level >= gateThreshold * 1.5f;
+            if (voiceOnset) {
+                gateVoiceOpen = true;
+                hold = holdSamples;
+            } else if (detector < gateThreshold * 0.68f) {
+                if (hold > 0) --hold;
+                else gateVoiceOpen = false;
+            }
             const float ratio = std::clamp(detector / gateThreshold, 0.f, 1.f);
             const float curve = ratio * ratio * ratio * ratio;
-            const float target = (voice || hold > 0) ? 1.f
+            const float target = gateVoiceOpen ? 1.f
                 : 1.f - gateAmount * (1.f - gateMinGain) * (1.f - curve);
             gateGain = smooth(gateGain, target,
                               target > gateGain ? gateOpen : gateReleaseFactor);
         } else {
             hold = 0;
+            gateVoiceOpen = false;
             gateGain = smooth(gateGain, 1.f, gateOpen);
         }
         const float estimatedBandGain = activeEnergy > 1.e-12f
@@ -221,5 +233,6 @@ private:
     float gateThresholdMultiplier = 1.8f, gateMinGain = 1.f;
     float sampleRateHz = 48000.f;
     int holdSamples = 0, hold = 0, transientGuard = 0;
+    bool gateVoiceOpen = false;
 };
 }

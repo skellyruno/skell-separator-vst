@@ -27,6 +27,7 @@ public:
     void paint(juce::Graphics&) override;
     void resized() override;
     void refresh(bool active);
+    juce::Component* getMenuAnchor() noexcept { return &menu; }
 private:
     SkellSeparatorAudioProcessor& processor;
     SoftButton mode { "SEPARATE" }, bypass { "Bypass" };
