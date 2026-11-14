@@ -8,6 +8,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
+#include <cstring>
 #include <memory>
 #include <string>
 #include <vector>
@@ -190,6 +191,13 @@ std::unique_ptr<StemgenHopModel> createStemgenRTHopModel(const char* localModelP
     SKELL_ORT_TRACE("factory: probing ONNX C API");
     const auto* base = OrtGetApiBase();
     if (base == nullptr) return {};
+    // The hosted runner loaded ORT 1.5.2 with 1.26.0 headers. Fail closed
+    // before Ort::Env dereferences an incompatible/null C API table.
+    if (base->GetVersionString() == nullptr ||
+        std::strcmp(base->GetVersionString(), "1.26.0") != 0) {
+        SKELL_ORT_TRACE("Refusing unexpected ONNX Runtime version");
+        return {};
+    }
     const auto* api = base->GetApi(ORT_API_VERSION);
 #if defined(SKELL_STEMGEN_TIMING_DIAGNOSTICS) && SKELL_STEMGEN_TIMING_DIAGNOSTICS
     std::fprintf(stderr, "[Skell ORT] runtime=%s requested_api=%u api=%s\n",

@@ -27,6 +27,12 @@ jobs:
       - name: Run API and memory-construction probe
         shell: pwsh
         run: |
-          $env:PATH = "$PWD/ort-sdk/onnxruntime-win-x64-1.26.0/lib;$env:PATH"
+          # The Windows runner may have a different ONNX Runtime on PATH.
+          # Stage this SDK's DLL beside the executable (Windows DLL search order).
+          $sdk = Join-Path $PWD 'ort-sdk/onnxruntime-win-x64-1.26.0/lib/onnxruntime.dll'
+          $exeDir = Join-Path $PWD 'build-ort-probe/Release'
+          if (!(Test-Path $sdk)) { throw 'Missing exact SDK runtime DLL' }
+          Copy-Item $sdk (Join-Path $exeDir 'onnxruntime.dll') -Force
+          if ((Get-FileHash $sdk -Algorithm SHA256).Hash -ne (Get-FileHash (Join-Path $exeDir 'onnxruntime.dll') -Algorithm SHA256).Hash) { throw 'Runtime DLL staging mismatch' }
           & ./build-ort-probe/Release/SkellOrtApiProbe.exe
           if ($LASTEXITCODE -ne 0) { throw "ORT API probe failed: $LASTEXITCODE" }

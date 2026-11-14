@@ -73,9 +73,13 @@ jobs:
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
-          $env:PATH = "$PWD/ort-sdk/onnxruntime-win-x64-1.26.0/lib;$env:PATH"
+          # PATH-only resolution accidentally loaded an unrelated 1.5.2 DLL.
+          $sdk = Join-Path $PWD 'ort-sdk/onnxruntime-win-x64-1.26.0/lib/onnxruntime.dll'
           $exe = Get-ChildItem build-stemgen -Recurse -File -Filter 'SkellStemgenHopTiming.exe' | Select-Object -First 1
-          if (!$exe) { throw 'Missing native ONNX benchmark executable' }
+          if (!$exe -or !(Test-Path $sdk)) { throw 'Missing ONNX benchmark or SDK runtime' }
+          $dll = Join-Path $exe.DirectoryName 'onnxruntime.dll'
+          Copy-Item $sdk $dll -Force
+          if ((Get-FileHash $sdk -Algorithm SHA256).Hash -ne (Get-FileHash $dll -Algorithm SHA256).Hash) { throw 'Runtime DLL staging mismatch' }
           & $exe.FullName "$PWD/independent.onnx" 1200
           if ($LASTEXITCODE -ne 0) { throw "Real graph benchmark rejected inference: $LASTEXITCODE" }
       - name: Remove noncommercial model from workspace after research

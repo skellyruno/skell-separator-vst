@@ -3,10 +3,25 @@
 #include <onnxruntime_cxx_api.h>
 #include <cstdio>
 #include <exception>
+#include <cstring>
+#ifdef _WIN32
+#include <windows.h>
+#endif
 int main() {
     std::fprintf(stderr, "[ORT probe] program entry\n"); std::fflush(stderr);
     const OrtApiBase* base = OrtGetApiBase();
     if (!base) { std::fprintf(stderr, "NULL OrtApiBase\n"); return 10; }
+#ifdef _WIN32
+    if (auto module = GetModuleHandleW(L"onnxruntime.dll")) {
+        wchar_t path[32768]{};
+        GetModuleFileNameW(module, path, 32768);
+        std::fwprintf(stderr, L"[ORT probe] loaded DLL=%ls\n", path);
+    }
+#endif
+    if (std::strcmp(base->GetVersionString(), "1.26.0") != 0) {
+        std::fprintf(stderr, "[ORT probe] Wrong runtime version: expected 1.26.0\n");
+        return 16;
+    }
     const OrtApi* api = base->GetApi(ORT_API_VERSION);
     std::fprintf(stderr, "[ORT probe] version=%s expected_api=%u ptr=%p\n",
                  base->GetVersionString(), static_cast<unsigned>(ORT_API_VERSION),
