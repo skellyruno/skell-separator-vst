@@ -122,3 +122,37 @@ if(SKELL_BUILD_UI_RENDERER)
         JUCE_WEB_BROWSER=0 JUCE_USE_CURL=0)
     target_compile_features(SkellSeparatorUIRenderer PRIVATE cxx_std_17)
 endif()
+
+# Optional external StemgenRT 0.7/0.8 graph. Research only; weights aren't bundled.
+option(SKELL_ENABLE_STEMGENRT "Enable external StemgenRT ONNX research backend" OFF)
+target_sources(SkellSeparator PRIVATE
+    Source/dsp/StemgenRTBridge.h Source/dsp/StemgenRTBridge.cpp
+    Source/dsp/StemgenORT.cpp)
+if(SKELL_ENABLE_STEMGENRT)
+    find_path(SKELL_ORT_INCLUDE_DIR onnxruntime_cxx_api.h
+              HINTS "${ONNXRUNTIME_ROOT}" PATH_SUFFIXES include include/onnxruntime/core/session)
+    find_library(SKELL_ORT_LIBRARY NAMES onnxruntime
+                 HINTS "${ONNXRUNTIME_ROOT}" PATH_SUFFIXES lib lib64)
+    if(NOT SKELL_ORT_INCLUDE_DIR OR NOT SKELL_ORT_LIBRARY)
+        message(FATAL_ERROR "StemgenRT requires ONNX Runtime SDK (set ONNXRUNTIME_ROOT)")
+    endif()
+    target_include_directories(SkellSeparator PRIVATE "${SKELL_ORT_INCLUDE_DIR}")
+    target_link_libraries(SkellSeparator PRIVATE "${SKELL_ORT_LIBRARY}" juce::juce_cryptography)
+    target_compile_definitions(SkellSeparator PRIVATE SKELL_WITH_STEMGENRT=1)
+    message(STATUS "StemgenRT research adapter enabled: SHA-256 verified graph required at 44.1 kHz")
+endif()
+
+# Optional native model-timing diagnostic (research only; no weights bundled).
+option(SKELL_BUILD_STEMGEN_HOP_TIMING "Build external-model Windows research latency diagnostic" OFF)
+if(SKELL_BUILD_STEMGEN_HOP_TIMING)
+    if(NOT SKELL_ENABLE_STEMGENRT)
+        message(FATAL_ERROR "SKELL_BUILD_STEMGEN_HOP_TIMING requires SKELL_ENABLE_STEMGENRT=ON")
+    endif()
+    target_compile_definitions(SkellSeparator PRIVATE SKELL_STEMGEN_TIMING_DIAGNOSTICS=1)
+    add_executable(SkellStemgenHopTiming tests/stemgen_native_timing.cpp)
+    target_link_libraries(SkellStemgenHopTiming PRIVATE
+        SkellSeparator Threads::Threads
+        juce::juce_audio_utils juce::juce_cryptography)
+    target_compile_features(SkellStemgenHopTiming PRIVATE cxx_std_17)
+    target_compile_definitions(SkellStemgenHopTiming PRIVATE JUCE_WEB_BROWSER=0 JUCE_USE_CURL=0)
+endif()

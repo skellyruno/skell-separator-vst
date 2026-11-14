@@ -1,0 +1,38 @@
+name: Skell Separator / Fast Windows ONNX API Probe
+on:
+  push:
+    branches: [research/stemgenrt-vocal-backend]
+    paths:
+      - 'tests/ort_api_probe/**'
+      - '.github/workflows/ort-api-probe.yml'
+  workflow_dispatch:
+jobs:
+  probe:
+    runs-on: windows-2022
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download official ONNX Runtime 1.26 CPU SDK (no model weights)
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          Invoke-WebRequest -Uri 'https://github.com/microsoft/onnxruntime/releases/download/v1.26.0/onnxruntime-win-x64-1.26.0.zip' -OutFile ort-sdk.zip
+          Expand-Archive ort-sdk.zip ort-sdk
+          if (!(Test-Path 'ort-sdk/onnxruntime-win-x64-1.26.0/include/onnxruntime_cxx_api.h')) { throw 'Missing SDK headers' }
+      - name: Compile isolated C/C++ runtime probe (no JUCE)
+        shell: pwsh
+        run: |
+          cmake -S tests/ort_api_probe -B build-ort-probe -A x64 -DONNXRUNTIME_ROOT="$PWD/ort-sdk/onnxruntime-win-x64-1.26.0"
+          cmake --build build-ort-probe --config Release
+      - name: Run API and memory-construction probe
+        shell: pwsh
+        run: |
+          # The Windows runner may have a different ONNX Runtime on PATH.
+          # Stage this SDK's DLL beside the executable (Windows DLL search order).
+          $sdk = Join-Path $PWD 'ort-sdk/onnxruntime-win-x64-1.26.0/lib/onnxruntime.dll'
+          $exeDir = Join-Path $PWD 'build-ort-probe/Release'
+          if (!(Test-Path $sdk)) { throw 'Missing exact SDK runtime DLL' }
+          Copy-Item $sdk (Join-Path $exeDir 'onnxruntime.dll') -Force
+          if ((Get-FileHash $sdk -Algorithm SHA256).Hash -ne (Get-FileHash (Join-Path $exeDir 'onnxruntime.dll') -Algorithm SHA256).Hash) { throw 'Runtime DLL staging mismatch' }
+          & ./build-ort-probe/Release/SkellOrtApiProbe.exe
+          if ($LASTEXITCODE -ne 0) { throw "ORT API probe failed: $LASTEXITCODE" }

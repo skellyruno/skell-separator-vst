@@ -1,0 +1,89 @@
+name: Skell Separator / Licensed Real Singing Quality Benchmark
+on:
+  push:
+    branches: [research/stemgenrt-vocal-backend]
+    paths:
+      - '.github/workflows/real-singing-benchmark.yml'
+      - 'tests/recorded_vocal_quality_gate.py'
+      - 'tests/recorded_vocal_runner.cpp'
+      - 'Source/dsp/LiveVocalCleanup.h'
+      - 'Source/dsp/MeasuredRoomDereverbResearch.h'
+  workflow_dispatch:
+jobs:
+  licensed-vocals:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install offline benchmark dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends ffmpeg g++ unzip python3-venv
+          python3 -m venv .benchvenv
+          .benchvenv/bin/python -m pip install --disable-pip-version-check numpy
+      - name: Download external CC BY 4.0 recorded sung vocal and instrumental stems
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p real-singing-private
+          # Mr_Yesterday, Just Lucky, I Guess (2025), CC BY 4.0
+          # https://ccmixter.org/files/Mr_Yesterday/70315
+          curl --fail --location --retry 3 --max-time 180 'https://mixter.plus/content/Mr_Yesterday/Mr_Yesterday_-_Just_Lucky_I_Guess_2.zip' --output real-singing-private/vocals.zip
+          curl --fail --location --retry 3 --max-time 180 'https://mixter.plus/content/Mr_Yesterday/Mr_Yesterday_-_Just_Lucky_I_Guess.zip' --output real-singing-private/accompaniment.zip
+          python3 - <<'PY'
+          from pathlib import Path
+          import zipfile
+          folder=Path('real-singing-private')
+          for archive, tail, dest in [('vocals.zip','_mic01Raw.flac','recorded_sung_vocal.flac'),('accompaniment.zip','_saxBari.flac','recorded_instrument.flac')]:
+              with zipfile.ZipFile(folder/archive) as z:
+                  matches=[n for n in z.namelist() if n.endswith(tail) and not n.startswith('__MACOSX')]
+                  if len(matches)!=1:
+                      raise RuntimeError(f'{archive}: need one {tail}, got {len(matches)}')
+                  audio=z.read(matches[0])
+                  if not audio.startswith(b'fLaC') or len(audio)<100000:
+                      raise RuntimeError(f'Invalid {tail} FLAC')
+                  (folder/dest).write_bytes(audio)
+          print('Validated external FLAC stem headers. Source audio stays in ephemeral workspace.')
+          PY
+      - name: Score fixed sung-vocal windows with real Skell LIVE and dereverb research DSP
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p real-singing-metrics
+          for offset in 0 45 90 135; do
+            .benchvenv/bin/python tests/recorded_vocal_quality_gate.py --dry real-singing-private/recorded_sung_vocal.flac --noise real-singing-private/recorded_instrument.flac --start-sec "$offset" --duration-sec 15 --rate 44100 --snr-db 6 --report "real-singing-metrics/window-$offset.json"
+          done
+          .benchvenv/bin/python - <<'PY'
+          from pathlib import Path
+          import json, statistics
+          reports=[json.loads(p.read_text()) for p in sorted(Path('real-singing-metrics').glob('*.json'))]
+          # Declared windows remain in the report. Exclude only those without
+          # independently sufficient vocal AND accompaniment activity.
+          valid=[r for r in reports if r['scorable']]
+          if len(valid)<2:
+              raise RuntimeError(f'Only {len(valid)} measurable sung-vocal windows; at least two required')
+          delta=[next(c['delta_sisdr_db'] for c in r['results'] if c['clean']==0.7 and c['gate']==0) for r in valid]
+          summary={'source':'Mr_Yesterday — Just Lucky, I Guess (2025), CC BY 4.0',
+                   'source_page':'https://ccmixter.org/files/Mr_Yesterday/70315',
+                   'recordings_in_artifact':False, 'requested_windows_sec':[0,45,90,135],
+                   'scorable_windows_sec':[r['segment_start_sec'] for r in valid],
+                   'excluded_windows':[{'start_sec':r['segment_start_sec'],'reason':r['reason']} for r in reports if not r['scorable']],
+                   'clean_70_delta_sisdr_db':delta,'mean_delta_sisdr_db':statistics.mean(delta),
+                   'dereverb_reference':'synthetic known-room reflections, not separately recorded wet-only'}
+          Path('real-singing-metrics/summary.json').write_text(json.dumps(summary,indent=2)+'\n')
+          print(json.dumps(summary,indent=2))
+          PY
+      - name: Upload metrics only (never redistribute licensed audio)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Skell-Separator-CCBY-Singing-Quality-Metrics
+          path: real-singing-metrics/*.json
+          if-no-files-found: warn
+          retention-days: 7
+      - name: Delete third-party audio
+        if: always()
+        shell: bash
+        run: rm -rf real-singing-private

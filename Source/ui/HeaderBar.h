@@ -13,9 +13,10 @@ class EngineBadge final : public juce::Button
 public:
     EngineBadge();
     void paintButton(juce::Graphics&, bool hovered, bool pressed) override;
-    void updateState(bool selected, bool available, bool bypassed, bool offline);
+    void updateState(bool selected, bool available, bool bypassed, bool offline, bool tracking, int cleanPercent);
 private:
-    bool neuralSelected = false, modelAvailable = false, isBypassed = false, offlineMode = false;
+    bool neuralSelected = false, modelAvailable = false, isBypassed = false, offlineMode = false, isTracking = false;
+    int cleanLevel = 0;
 };
 
 class HeaderBar final : public juce::Component
@@ -26,9 +27,10 @@ public:
     void paint(juce::Graphics&) override;
     void resized() override;
     void refresh(bool active);
+    juce::Component* getMenuAnchor() noexcept { return &menu; }
 private:
     SkellSeparatorAudioProcessor& processor;
-    SoftButton mode { "Stereo" }, bypass { "Bypass" };
+    SoftButton mode { "SEPARATE" }, bypass { "Bypass" };
     EngineBadge engine;
     RoundIconButton previous { RoundIconButton::Kind::previous };
     RoundIconButton next { RoundIconButton::Kind::next };
@@ -38,4 +40,6 @@ private:
     bool overloadVisible = false;
     int overloadHold = 0; // 45 editor ticks ~ one second
     std::uint64_t lastOverZeroBlocks = 0;
+    int trackReductionRounded = 0;
+    bool trackingClean = false;
 };

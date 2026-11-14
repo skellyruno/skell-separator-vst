@@ -31,7 +31,7 @@ def intersects(a, b):
 controls = {name: bounds(header, name) for name in ("mode", "engine", "bypass", "previous", "next", "menu")}
 for name, rect in controls.items():
     assert inside(rect, (0, 0, base[0], header_h)), name
-# All header interactions must be independently targetable at 75% size.
+# All header interactions must be independently targetable at 56% size.
 for a in controls:
     for b in controls:
         if a < b:
@@ -42,23 +42,44 @@ for name, rect in controls.items():
     assert not intersects(over, rect), f"OVER overlaps {name}"
 
 panel = (7.5, 1.0, 295.0, 469.0)
-for name in ("gain", "solo", "mute", "meter"):
+for name in ("gain", "liveGain", "solo", "mute", "meter"):
     rect = bounds(column, name)
     assert inside(rect, panel), (name, rect)
+assert bounds(column, "liveGain") == bounds(column, "gain")
+assert 'gain.setVisible(!live)' in column and 'liveGain.setVisible(live)' in column
+assert 'solo.setVisible(!live)' in column and 'mute.setVisible(!live)' in column
+assert '"trackClean", "trackGate", "trackTails"' in column
+assert 'processor.setTrackingMode(!processor.isTrackingMode());' in header
+assert 'mode.setCaption(tracking ? "LIVE" : "SEPARATE")' in header
 for center in centers:
     assert inside((center-column_size[0]/2, 109, *column_size), (0, 0, *base)), center
 
 # Track the real processor and editor contract, not a second invented layout.
 assert "processor.setUiScale(juce::roundToInt(100.0f * getWidth() / Theme::designW))" in editor
 assert "constrainer.setFixedAspectRatio(Theme::designW / Theme::designH)" in editor
-assert "constrainer.setSizeLimits(785, 448, 1571, 896)" in editor
+assert "constrainer.setSizeLimits(586, 334, 1571, 896)" in editor
 assert "NormalisableRange<float>(-40.0f, 40.0f, 0.1f), 0.0f" in processor
-for size in ((785, 448), (1047, 597), (1571, 896)):
+for size in ((586, 334), (785, 448), (1047, 597), (1571, 896)):
     sx, sy = size[0] / base[0], size[1] / base[1]
     for name, (x,y,w,h) in controls.items():
         target = (round(x*sx), round(y*sy), round(w*sx), round(h*sy))
         assert inside(target, (0, 0, size[0], round(header_h*sy))), (size, name)
 # A recalled Neural setting at a different host rate must permit exiting it.
-assert 'if (!selected && !processor.hasNeuralBackend()) return;' in header
-assert 'engine.setEnabled(processor.hasNeuralBackend() || selected)' in header
-print("Static JUCE geometry/default/resize/engine-exit contract passed at 75%, 100%, 150% (not a render test)")
+assert 'if (!selected && processor.availableNeuralMode() == 0) return;' in header
+# Existing engineMode 0/1 normalization remains unchanged for saved host automation.
+assert 'juce::StringArray { "Classical", "Neural Experimental" }, 0)' in processor
+assert 'stemgenResearch' in processor
+assert 'processor.availableNeuralMode() == 2 ? 1.0f : 0.0f' in header
+assert 'engine.setEnabled(processor.hasNeuralBackend() || selected || processor.isTrackingMode())' in header
+assert 'if (processor.isTrackingMode()) { processor.setTrackingMode(false); return; }' in header
+assert 'LIVE / 0ms DRY MIC' in header
+assert 'LIVE / CLEANUP ON' in header
+assert 'LIVE — Clean / Gate / Tails' in editor
+assert 'SEPARATE — Ambience / Voice / Reverb' in editor
+assert '"trackGate"' in processor
+assert "withTargetComponent(header.getMenuAnchor())" in editor
+assert "for (int pct : { 56, 75, 100, 125, 150 })" in editor
+assert "result == 156 || result == 175" in editor
+assert "inline const juce::Colour accent { 0xff39ff3a }" in (root / "Source/ui/Theme.h").read_text()
+assert "Theme::meterAccent" in (root / "Source/ui/StemMeter.cpp").read_text()
+print("Static JUCE geometry/default/resize/menu/color contract passed at 56%, 75%, 100%, 150% (not a render test)")

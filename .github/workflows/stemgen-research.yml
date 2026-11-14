@@ -1,0 +1,94 @@
+name: StemgenRT Research Adapter Validation
+on:
+  push:
+    branches: [research/stemgenrt-vocal-backend]
+  pull_request:
+    paths:
+      - 'Source/**'
+      - 'tests/**'
+      - 'CMakeLists.txt'
+      - '.github/workflows/stemgen-research.yml'
+  workflow_dispatch:
+
+jobs:
+  portable-contract:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Bridge, transport, scheduling and sanitizer regressions
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash tests/run_stemgen_bridge.sh
+          bash tests/run_stemgen_transport.sh
+          bash tests/run_fast_neural_hops.sh
+          bash tests/run_fast_neural_paced.sh
+          SKELL_SANITIZE=1 SKELL_TEST_BINARY=/tmp/skell-stemgen-sanitized bash tests/run_stemgen_bridge.sh
+          SKELL_SANITIZE=1 SKELL_TEST_BINARY=/tmp/skell-stemgen-transport-sanitized bash tests/run_stemgen_transport.sh
+          CXX=clang++ SKELL_SANITIZE=1 bash tests/run_fast_neural_hops.sh
+          bash tests/run_neural_contract.sh
+          bash tests/run_neural_blend.sh
+          python3 -m py_compile tools/install_stemgenrt_model.py
+
+  windows-onnx-compile:
+    runs-on: windows-2022
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - name: Obtain official ONNX Runtime CPU SDK (build-only; no weights)
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          Invoke-WebRequest -Uri 'https://github.com/microsoft/onnxruntime/releases/download/v1.26.0/onnxruntime-win-x64-1.26.0.zip' -OutFile ort-sdk.zip
+          Expand-Archive -Path ort-sdk.zip -DestinationPath ort-sdk
+          if (!(Test-Path 'ort-sdk/onnxruntime-win-x64-1.26.0/include/onnxruntime_cxx_api.h')) { throw 'Missing C++ API header' }
+      - name: Configure research build (no noncommercial model weights)
+        shell: pwsh
+        run: |
+          cmake -S . -B build-stemgen -A x64 -DSKELL_ENABLE_STEMGENRT=ON -DSKELL_BUILD_STEMGEN_HOP_TIMING=ON -DONNXRUNTIME_ROOT="$PWD/ort-sdk/onnxruntime-win-x64-1.26.0"
+      - name: Compile VST3 and Standalone with optional ONNX adapter
+        shell: pwsh
+        run: cmake --build build-stemgen --config Release --parallel 2
+      - name: Verify Windows VST3 exists (compile only; not a distributable package)
+        shell: pwsh
+        run: |
+          $plugin = Get-ChildItem build-stemgen -Recurse -Directory -Filter '*.vst3' | Select-Object -First 1
+          if (!$plugin) { throw 'Windows VST3 not generated' }
+          Write-Host "Research VST3 compiled: $($plugin.FullName)"
+      - name: Download exact upstream noncommercial model for ephemeral research timing
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          # CC BY-NC-SA weights with unresolved source-data rights. Research
+          # diagnostic only; never package them with Skell VST3 or upload them.
+          $url = 'https://github.com/sweetspotsoundsystem/StemgenRT-5.8/releases/download/v0.7.0/independent.onnx'
+          & curl.exe --fail --silent --show-error --location --retry 3 --output independent.onnx $url
+          if ($LASTEXITCODE -ne 0) { throw 'Model research download failed' }
+          $model = Get-Item independent.onnx
+          $sha = (Get-FileHash independent.onnx -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($model.Length -ne 31946241 -or $sha -ne '0a49388dd2a47986ab9a161c8764c22853b4d601c188ac052eb530f076d513c7') {
+            throw 'Refused incorrect model bytes or graph revision'
+          }
+      - name: Measure real 128-hop ONNX inference on Windows CPU (not DAW qualification)
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          # PATH-only resolution accidentally loaded an unrelated 1.5.2 DLL.
+          $sdk = Join-Path $PWD 'ort-sdk/onnxruntime-win-x64-1.26.0/lib/onnxruntime.dll'
+          $exe = Get-ChildItem build-stemgen -Recurse -File -Filter 'SkellStemgenHopTiming.exe' | Select-Object -First 1
+          if (!$exe -or !(Test-Path $sdk)) { throw 'Missing ONNX benchmark or SDK runtime' }
+          $dll = Join-Path $exe.DirectoryName 'onnxruntime.dll'
+          Copy-Item $sdk $dll -Force
+          if ((Get-FileHash $sdk -Algorithm SHA256).Hash -ne (Get-FileHash $dll -Algorithm SHA256).Hash) { throw 'Runtime DLL staging mismatch' }
+          # Compare CPU thread policies on the same runner/graph.
+          # Single-hop inference timing is not a host scheduling certification.
+          foreach ($threads in @(1, 2, 3)) {
+            Write-Host "===== StemgenRT real model, intra-op threads: $threads ====="
+            & $exe.FullName "$PWD/independent.onnx" 1200 $threads
+            if ($LASTEXITCODE -ne 0) { throw "Real graph benchmark rejected inference (threads $threads): $LASTEXITCODE" }
+          }
+      - name: Remove noncommercial model from workspace after research
+        if: always()
+        shell: pwsh
+        run: |
+          Remove-Item independent.onnx -Force -ErrorAction SilentlyContinue

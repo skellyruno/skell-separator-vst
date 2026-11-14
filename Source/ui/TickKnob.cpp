@@ -26,6 +26,15 @@ void TickKnob::setCircular(bool value)
     if (getSliderStyle() != style) setSliderStyle(style);
 }
 
+void TickKnob::configurePercent(float resetValue)
+{
+    setRange(0.0, 100.0, 1.0);
+    setTextValueSuffix(" %");
+    textFromValueFunction = [](double v) { return juce::String(juce::roundToInt(v)) + " %"; };
+    valueFromTextFunction = [](const juce::String& s) { return s.getDoubleValue(); };
+    setDoubleClickReturnValue(true, resetValue);
+}
+
 void TickKnob::renderFace()
 {
     face = juce::Image(juce::Image::ARGB, 216, 216, true);
@@ -64,7 +73,8 @@ void TickKnob::paint(juce::Graphics& g)
 {
     g.addTransform(juce::AffineTransform::scale(getWidth() / 260.0f, getHeight() / 331.0f));
     const juce::Point<float> centre { 130.0f, 151.0f };
-    const float fraction = static_cast<float>((getValue() + 40.0) / 80.0);
+    const float fraction = static_cast<float>(juce::jlimit(0.0, 1.0,
+        (getValue() - getMinimum()) / juce::jmax(0.001, getMaximum() - getMinimum())));
     const float from = -0.75f * juce::MathConstants<float>::pi;
     const float sweep = 1.5f * juce::MathConstants<float>::pi;
     for (int i = 0; i < 55; ++i)
@@ -119,7 +129,8 @@ void TickKnob::paint(juce::Graphics& g)
 void TickKnob::mouseWheelMove(const juce::MouseEvent&, const juce::MouseWheelDetails& wheel)
 {
     if (wheel.deltaY != 0)
-        setValue(getValue() + (wheel.deltaY > 0.0f ? 0.5 : -0.5), juce::sendNotificationSync);
+        setValue(getValue() + (wheel.deltaY > 0.0f ? getInterval() : -getInterval()),
+                 juce::sendNotificationSync);
 }
 
 void TickKnob::mouseDown(const juce::MouseEvent& event)

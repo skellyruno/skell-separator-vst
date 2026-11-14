@@ -12,6 +12,7 @@ public:
     void setMuted(bool m) { if (muted != m) { muted = m; repaint(); } }
     void setActive(bool a) { if (active != a) { active = a; repaint(); } }
     void setCircular(bool value);
+    void configurePercent(float resetValue);
 private:
     void renderFace();
     juce::Image face;
