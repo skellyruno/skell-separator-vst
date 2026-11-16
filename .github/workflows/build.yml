@@ -5,6 +5,10 @@ on:
     branches: [main]
   pull_request:
 
+concurrency:
+  group: separator-vst3-${{ github.workflow }}-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   build:
     runs-on: windows-latest
@@ -14,14 +18,46 @@ jobs:
         run: cmake -S . -B build -A x64
       - name: Build
         run: cmake --build build --config Release --parallel 2
-      - name: Package
+      - name: Validate and package exactly one Windows VST3
         shell: pwsh
         run: |
-          $plugin = Get-ChildItem -Path build -Directory -Recurse -Filter '*.vst3' | Select-Object -First 1
-          if (-not $plugin) { throw 'VST3 bundle missing' }
-          Compress-Archive -Path $plugin.FullName -DestinationPath SkellPlugin-Windows-VST3.zip
+          $ErrorActionPreference = 'Stop'
+          $bundles = @(Get-ChildItem -LiteralPath build -Directory -Recurse -Filter '*.vst3' | Where-Object { $_.FullName -match '[\\/]Release[\\/]' })
+          if ($bundles.Count -ne 1) { throw "Expected exactly one Release VST3 bundle; found $($bundles.Count)" }
+          $bundle = $bundles[0]
+          if ($bundle.Name -ne 'Skell Separator.vst3') { throw "Unexpected plugin bundle: $($bundle.Name)" }
+          $modules = @(Get-ChildItem -LiteralPath $bundle.FullName -File -Recurse -Filter '*.vst3')
+          if ($modules.Count -ne 1) { throw "Expected one VST3 module; found $($modules.Count)" }
+          $module = $modules[0]
+          if ($module.FullName -notmatch '[\\/]Contents[\\/]x86_64-win[\\/]') { throw "Wrong VST3 module location: $($module.FullName)" }
+          $bytes = [System.IO.File]::ReadAllBytes($module.FullName)
+          if ($bytes.Length -lt 512 -or $bytes[0] -ne 0x4d -or $bytes[1] -ne 0x5a) { throw 'Missing Windows MZ header' }
+          $offset = [BitConverter]::ToInt32($bytes, 0x3c)
+          if ($offset -lt 64 -or $offset -gt ($bytes.Length - 26)) { throw 'Invalid PE offset' }
+          if ([Text.Encoding]::ASCII.GetString($bytes, $offset, 4) -ne "PE`0`0") { throw 'Missing PE signature' }
+          if ([BitConverter]::ToUInt16($bytes, $offset + 4) -ne 0x8664) { throw 'Expected AMD64 machine' }
+          if ([BitConverter]::ToUInt16($bytes, $offset + 24) -ne 0x20b) { throw 'Expected PE32+ format' }
+          Get-FileHash -LiteralPath $module.FullName -Algorithm SHA256 | Format-List
+          $stage = Join-Path $env:RUNNER_TEMP 'separator-release-stage'
+          New-Item -ItemType Directory -Force -Path $stage | Out-Null
+          Copy-Item -LiteralPath $bundle.FullName -Destination $stage -Recurse
+          $archive = Join-Path $env:GITHUB_WORKSPACE 'SkellSeparator-Windows-VST3.zip'
+          Compress-Archive -LiteralPath (Join-Path $stage $bundle.Name) -DestinationPath $archive -Force
+          Add-Type -AssemblyName System.IO.Compression
+          $zip = [System.IO.Compression.ZipFile]::OpenRead($archive)
+          try {
+            $entries = @($zip.Entries | Where-Object { $_.FullName -match '\.vst3$' })
+            if ($entries.Count -ne 1) { throw "Archive must contain exactly one VST3 module; found $($entries.Count)" }
+            $names = @($zip.Entries | ForEach-Object { $_.FullName })
+            if (@($names | Sort-Object -Unique).Count -ne $names.Count) { throw 'Duplicate ZIP paths' }
+            foreach ($name in $names) {
+              if ($name.StartsWith('/') -or $name -match '(^|/)\.\.(/|$)' -or $name.Contains('\\')) { throw "Unsafe ZIP entry: $name" }
+            }
+          } finally { $zip.Dispose() }
+          Get-FileHash -LiteralPath $archive -Algorithm SHA256 | Format-List
       - uses: actions/upload-artifact@v4
         with:
-          name: SkellPlugin-Windows-VST3
-          path: SkellPlugin-Windows-VST3.zip
+          name: SkellSeparator-Windows-VST3
+          path: SkellSeparator-Windows-VST3.zip
           if-no-files-found: error
+          retention-days: 7
