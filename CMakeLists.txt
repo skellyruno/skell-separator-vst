@@ -36,7 +36,7 @@ juce_add_plugin(SkellSeparator
     IS_MIDI_EFFECT FALSE
     EDITOR_WANTS_KEYBOARD_FOCUS TRUE
     COPY_PLUGIN_AFTER_BUILD FALSE
-    FORMATS VST3 Standalone)
+    FORMATS VST3)
 
 juce_generate_juce_header(SkellSeparator)
 
@@ -99,7 +99,7 @@ if(SKELL_ENABLE_TINY_NEURAL)
     message(STATUS "Skell Tiny Neural compiled; latency 2880 samples (60 ms at 48 kHz), default engine Classical")
 endif()
 
-# Optional real-editor visual regression. Production VST3/Standalone builds do
+# Optional real-editor visual regression. Production VST3 builds do
 # not fetch SkellCore; only the screenshot target needs the shared harness.
 # Pin the same known revision used by Skell-Preset's verified renderer.
 option(SKELL_BUILD_UI_RENDERER "Build SkellCore real-editor PNG validation harness" OFF)
