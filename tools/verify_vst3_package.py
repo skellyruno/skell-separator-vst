@@ -1,7 +1,13 @@
 #!/usr/bin/env python3
 """Fail-closed Windows VST3 package staging and verification for Skell Separator."""
 from __future__ import annotations
-import argparse, hashlib, json, re, shutil, struct, sys
+import argparse
+import hashlib
+import json
+import re
+import shutil
+import struct
+import sys
 from pathlib import Path
 from typing import Any
 
@@ -21,14 +27,16 @@ class PackageError(RuntimeError):
 
 def strip_trailing_commas(text: str) -> str:
     """Remove JSON5 trailing commas without changing commas inside strings."""
-    out, quoted, escaped, i = [], False, False, 0
+    out = []
+    quoted = escaped = False
+    i = 0
     while i < len(text):
         ch = text[i]
         if quoted:
             out.append(ch)
             if escaped:
                 escaped = False
-            elif ch == "\\\\":
+            elif ch == chr(92):
                 escaped = True
             elif ch == '"':
                 quoted = False
@@ -89,7 +97,7 @@ def validate_pe32_plus_x64(path: Path) -> None:
     offset = struct.unpack_from("<I", data, 0x3C)[0]
     if offset < 0x40 or offset + 26 > len(data):
         raise PackageError("VST3 module has an invalid PE header offset")
-    if data[offset:offset + 4] != b"PE\\0\\0":
+    if data[offset:offset + 4] != bytes((80, 69, 0, 0)):
         raise PackageError("VST3 module is missing the PE signature")
     machine = struct.unpack_from("<H", data, offset + 4)[0]
     magic = struct.unpack_from("<H", data, offset + 24)[0]
@@ -145,10 +153,11 @@ def stage_package(bundle: Path, output: Path, source_head: str, tested_commit: s
     output.mkdir(parents=True)
     staged_bundle = output / BUNDLE
     shutil.copytree(bundle, staged_bundle)
-    (staged_bundle / MODULEINFO).write_text(normalized, encoding="utf-8", newline="\\n")
+    (staged_bundle / MODULEINFO).write_text(normalized, encoding="utf-8")
     info, module, _ = validate_bundle(staged_bundle, expected_version)
     if source_info.read_text(encoding="utf-8-sig") != original_info or sha256(source_module) != original_binary_hash:
         raise PackageError("Staging modified the original compiled VST3 bundle")
+
     result = {
         "product": PRODUCT, "vendor": VENDOR, "version": expected_version,
         "format": "VST3", "platform": "Windows x86_64", "bundle": BUNDLE,
@@ -167,19 +176,18 @@ def stage_package(bundle: Path, output: Path, source_head: str, tested_commit: s
         "source_head_sha": source_head, "tested_commit": tested_commit,
         "workflow_run_id": str(run_id), "artifact_status": "private CI preview",
     }
-    (output / "vst3-verification.json").write_text(json.dumps(result, indent=2) + "\\n", encoding="utf-8")
-    (output / "build-info.json").write_text(json.dumps(build_info, indent=2) + "\\n", encoding="utf-8")
-    (output / "PREVIEW-ONLY.txt").write_text(
-        "SKELL SEPARATOR — PRIVATE WINDOWS VST3 PREVIEW\\n"
-        "Not an approved public or commercial release.\\n"
-        "FL Studio acceptance, musical A/B, target-hardware CPU/latency, licensing and updater/rollback remain separate gates.\\n",
-        encoding="utf-8",
-    )
+    nl = chr(10)
+    (output / "vst3-verification.json").write_text(json.dumps(result, indent=2) + nl, encoding="utf-8")
+    (output / "build-info.json").write_text(json.dumps(build_info, indent=2) + nl, encoding="utf-8")
+    (output / "PREVIEW-ONLY.txt").write_text(nl.join([
+        "SKELL SEPARATOR — PRIVATE WINDOWS VST3 PREVIEW",
+        "Not an approved public or commercial release.",
+        "FL Studio acceptance, musical A/B, target-hardware CPU/latency, licensing and updater/rollback remain separate gates.",
+        "",
+    ]), encoding="utf-8")
     files = sorted(p for p in output.rglob("*") if p.is_file() and p.name != "SHA256SUMS.txt")
-    (output / "SHA256SUMS.txt").write_text(
-        "".join(f"{sha256(p)}  {p.relative_to(output).as_posix()}\\n" for p in files),
-        encoding="ascii",
-    )
+    checksum_lines = [f"{sha256(p)}  {p.relative_to(output).as_posix()}" for p in files]
+    (output / "SHA256SUMS.txt").write_text(nl.join(checksum_lines) + nl, encoding="ascii")
     return result
 
 

@@ -11,7 +11,7 @@ def fake_pe(machine=0x8664, magic=0x20B):
     data = bytearray(512)
     data[:2] = b"MZ"
     struct.pack_into("<I", data, 0x3C, 0x80)
-    data[0x80:0x84] = b"PE\\0\\0"
+    data[0x80:0x84] = bytes((80, 69, 0, 0))
     struct.pack_into("<H", data, 0x84, machine)
     struct.pack_into("<H", data, 0x98, magic)
     return bytes(data)
@@ -39,7 +39,7 @@ def make_bundle(root, module=None, info=None, trailing=True):
     raw = json.dumps(info if info is not None else metadata(), indent=2)
     if trailing:
         raw = raw.replace('"E-Mail": ""', '"E-Mail": "",')
-        raw = raw.replace('"Version": "1.13.0"\\n', '"Version": "1.13.0",\\n')
+        raw = raw.replace('"Version": "1.13.0"' + chr(10), '"Version": "1.13.0",' + chr(10))
     path.write_text(raw, encoding="utf-8")
     return bundle
 
@@ -84,7 +84,7 @@ class PackageVerifierTests(unittest.TestCase):
 
     def test_pe32_binary_rejected(self):
         with tempfile.TemporaryDirectory() as tmp:
-            with self.assertRaisesRegex(PackageError, "PE32\\+"):
+            with self.assertRaisesRegex(PackageError, r"PE32\+"):
                 validate_bundle(make_bundle(Path(tmp), module=fake_pe(magic=0x10B)), "1.13.0")
 
     def test_missing_module_rejected(self):
