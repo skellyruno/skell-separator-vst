@@ -343,8 +343,9 @@ function Get-ValidatedPackage([string]$Root) {
     }
     $manifestIds = @($verification.class_ids | ForEach-Object { ([string]$_).ToUpperInvariant() } | Sort-Object)
     $manifestCategories = @($verification.class_categories | ForEach-Object { [string]$_ } | Sort-Object)
-    if ((Compare-Object -ReferenceObject @($evidence.class_ids) -DifferenceObject $manifestIds).Count -gt 0 -or
-        (Compare-Object -ReferenceObject @($evidence.class_categories) -DifferenceObject $manifestCategories).Count -gt 0) {
+    $classIdDifferences = @(Compare-Object -ReferenceObject @($evidence.class_ids) -DifferenceObject $manifestIds)
+    $categoryDifferences = @(Compare-Object -ReferenceObject @($evidence.class_categories) -DifferenceObject $manifestCategories)
+    if ($classIdDifferences.Count -gt 0 -or $categoryDifferences.Count -gt 0) {
         throw 'VST3 verification class identity does not match moduleinfo.json.'
     }
     if ([string]$verification.source_head_sha -notmatch '^[0-9a-fA-F]{40}$' -or

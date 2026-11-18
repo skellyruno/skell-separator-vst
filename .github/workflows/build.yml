@@ -2,7 +2,7 @@ name: Build Windows VST3
 on:
   workflow_dispatch:
   push:
-    branches: [main, release/separator-private-installer-rollback-20261118]
+    branches: [main]
   pull_request:
 
 concurrency:
