@@ -40,6 +40,12 @@ jobs:
           $version = $versionMatch.Groups[1].Value
           python tools/verify_vst3_package.py --bundle $bundles[0].FullName --output-dir release-stage --source-head $env:SOURCE_HEAD_SHA --tested-commit $env:TESTED_COMMIT --run-id $env:GITHUB_RUN_ID --expected-version $version
           if ($LASTEXITCODE -ne 0) { throw "VST3 package verifier failed with exit code $LASTEXITCODE" }
+      - name: Test private install, update and rollback helper
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $testRoot = Join-Path $env:RUNNER_TEMP ('skell-separator-installer-' + $env:GITHUB_RUN_ID + '-' + $env:GITHUB_RUN_ATTEMPT)
+          & .\scripts\Test-Install-SkellSeparator.ps1 -PackageRoot (Join-Path $PWD 'release-stage') -InstallerPath (Join-Path $PWD 'scripts/Install-SkellSeparator.ps1') -TestRoot $testRoot
       - name: Install pinned pluginval 1.0.4
         shell: pwsh
         run: |
