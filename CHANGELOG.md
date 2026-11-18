@@ -1,3 +1,10 @@
+## Private preview distribution tooling (November 18, 2026)
+
+- Add a Windows PowerShell VST3 installer/update/rollback helper for the checksum-verified one-extraction preview package.
+- Fix strict-mode handling for empty class-identity comparisons in the installer preflight.
+- Validate provenance, strict JSON metadata, AMD64 PE32+ module structure, full package checksums and backup tree hashes before replacing an existing bundle.
+- Add WhatIf, idempotent install, verified pre-update backup, rollback and non-destructive failure handling tests. This is unsigned private-preview tooling, not a commercial installer.
+
 ## 1.13.0 — Deterministic offline neural bounce and DSP/UX accuracy
 
 - Run the same trained 48 kHz model on the non-real-time render thread when the host has declared offline mode before `prepareToPlay`; leave live playback on a nonblocking worker. No new dependencies.

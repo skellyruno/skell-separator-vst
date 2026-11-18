@@ -167,6 +167,23 @@ cmake -S . -B build -A x64 -DJUCE_PATH="C:/JUCE"
 
 `build.yml` preserves the original template's checkout/configure/build/package flow, with names updated for this plugin.
 
+
+## Private Windows VST3 install, update and rollback
+
+The release workflow stages a **private preview** package with one top-level Skell Separator VST3 bundle and checksum/provenance sidecars. The PowerShell helper validates the complete package before touching the installation directory.
+
+Preview-only examples (run PowerShell as Administrator only when using the machine-wide Program Files VST3 directory):
+
+1. Extract the GitHub Actions preview artifact once.
+2. Run a dry-run first: pwsh -File .\scripts\Install-SkellSeparator.ps1 -PackageRoot .\release-stage -WhatIf
+3. Install or update after reviewing the target: pwsh -File .\scripts\Install-SkellSeparator.ps1 -PackageRoot .\release-stage -Confirm
+4. To use a user-writable test folder, pass -Vst3Directory with that folder. The default target is the Windows Common Files VST3 directory.
+5. Each replacement creates a verified timestamped backup under the current user's LocalAppData. Roll back by passing that backup folder to -RollbackFrom.
+
+The helper refuses malformed or tampered checksum manifests, path traversal, duplicate/case-colliding JSON keys, non-finite JSON numbers, reparse points, unexpected bundle/module layouts, non-AMD64 modules, and invalid existing targets. It stages and verifies the new bundle before replacing the existing one, and preserves a verified pre-update backup. It never deletes presets, FL Studio projects, host state or other VST3 products.
+
+This is **not** a signed installer and does not establish FL Studio compatibility, audio quality, licensing clearance or commercial distribution approval. The package and helper remain private-preview tooling until the remaining release gates are accepted.
+
 ## Optional neural build (v1.4)
 
 In v1.9 the default `build.yml` now compiles the original Tiny Neural model,
