@@ -149,7 +149,7 @@ Reverb remains a classical estimate. See
 
 1. Upload the contents of this ZIP to a GitHub repository named `skell-separator-vst`.
 2. Open **Actions → Build Windows VST3 → Run workflow**. Pushing to `main` also builds automatically.
-3. Download **SkellPlugin-Windows-VST3** from the successful workflow's Artifacts. The current workflow packages the VST3 bundle; the Standalone target also compiles but is not included in this artifact.
+3. Download **SkellSeparator-Windows-VST3** from the successful workflow's Artifacts only when repository visibility is private. This project builds a Windows x64 VST3 only; no Standalone target is configured. On public, internal or unknown visibility, the workflow withholds the product ZIP while still running build, package and pluginval checks.
 4. Install the VST3 bundle into `C:\Program Files\Common Files\VST3\` and rescan in FL Studio. Test with a new project first.
 
 The exact CMake build locally is:
@@ -168,13 +168,13 @@ cmake -S . -B build -A x64 -DJUCE_PATH="C:/JUCE"
 `build.yml` preserves the original template's checkout/configure/build/package flow, with names updated for this plugin.
 
 
-## Private Windows VST3 install, update and rollback
+## Owner-test Windows VST3 install, update and rollback
 
-The release workflow stages a **private preview** package with one top-level Skell Separator VST3 bundle and checksum/provenance sidecars. The PowerShell helper validates the complete package before touching the installation directory.
+The release workflow stages an **owner-test preview** package with one top-level Skell Separator VST3 bundle and checksum/provenance sidecars. The package manifests record repository visibility and artifact access. Product ZIP upload is permitted only when repository visibility is `private`; public, internal or unknown visibility withholds the product ZIP while validation and non-product diagnostics continue. Existing artifacts from earlier public runs remain publicly accessible and cannot be made private by this guard.
 
 Preview-only examples (run PowerShell as Administrator only when using the machine-wide Program Files VST3 directory):
 
-1. Extract the GitHub Actions preview artifact once.
+1. When the repository is private, extract the GitHub Actions preview artifact once. Do not treat an artifact from a public-repository run as private.
 2. Run a dry-run first: pwsh -File .\scripts\Install-SkellSeparator.ps1 -PackageRoot .\release-stage -WhatIf
 3. Install or update after reviewing the target: pwsh -File .\scripts\Install-SkellSeparator.ps1 -PackageRoot .\release-stage -Confirm
 4. To use a user-writable test folder, pass -Vst3Directory with that folder. The default target is the Windows Common Files VST3 directory.
@@ -182,7 +182,7 @@ Preview-only examples (run PowerShell as Administrator only when using the machi
 
 The helper refuses malformed or tampered checksum manifests, path traversal, duplicate/case-colliding JSON keys, non-finite JSON numbers, reparse points, unexpected bundle/module layouts, non-AMD64 modules, and invalid existing targets. It stages and verifies the new bundle before replacing the existing one, and preserves a verified pre-update backup. It never deletes presets, FL Studio projects, host state or other VST3 products.
 
-This is **not** a signed installer and does not establish FL Studio compatibility, audio quality, licensing clearance or commercial distribution approval. The package and helper remain private-preview tooling until the remaining release gates are accepted.
+This is **not** a signed installer and does not establish FL Studio compatibility, audio quality, licensing clearance or commercial distribution approval. The package and helper remain owner-test preview tooling until the remaining release gates are accepted; this visibility guard does not change the access of artifacts already uploaded by earlier public runs.
 
 ## Optional neural build (v1.4)
 

@@ -120,6 +120,61 @@ class PackageVerifierTests(unittest.TestCase):
                 digest, relative = line.split("  ", 1)
                 self.assertEqual(digest, sha256(stage / relative))
             self.assertEqual(result["module_sha256"], original_hash)
+            build_info = json.loads((stage / "build-info.json").read_text(encoding="utf-8"))
+            self.assertEqual(build_info["repository_visibility"], "unknown")
+            self.assertFalse(build_info["artifact_upload_allowed"])
+
+    def test_public_repository_records_public_access_and_withholds_product_upload(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            bundle = make_bundle(root)
+            stage = root / "public-stage"
+            result = stage_package(bundle, stage, "source", "tested", "123", "1.13.0",
+                                   repository_visibility="public")
+            build_info = json.loads((stage / "build-info.json").read_text(encoding="utf-8"))
+            verification = json.loads((stage / "vst3-verification.json").read_text(encoding="utf-8"))
+            preview = (stage / "PREVIEW-ONLY.txt").read_text(encoding="utf-8")
+            self.assertEqual(result["repository_visibility"], "public")
+            self.assertEqual(build_info["artifact_access"], "public")
+            self.assertFalse(build_info["artifact_upload_allowed"])
+            self.assertEqual(verification["artifact_access"], "public")
+            self.assertFalse(verification["artifact_upload_allowed"])
+            self.assertIn("public repository", build_info["artifact_status"])
+            self.assertIn("withheld", build_info["artifact_status"])
+            self.assertIn("Existing artifacts from public-repository runs remain publicly accessible", preview)
+
+    def test_private_repository_allows_repository_restricted_owner_test_upload(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            bundle = make_bundle(root)
+            stage = root / "private-stage"
+            result = stage_package(bundle, stage, "source", "tested", "123", "1.13.0",
+                                   repository_visibility="private")
+            build_info = json.loads((stage / "build-info.json").read_text(encoding="utf-8"))
+            verification = json.loads((stage / "vst3-verification.json").read_text(encoding="utf-8"))
+            self.assertEqual(result["artifact_access"], "repository-restricted")
+            self.assertTrue(result["artifact_upload_allowed"])
+            self.assertTrue(build_info["artifact_upload_allowed"])
+            self.assertTrue(verification["artifact_upload_allowed"])
+            self.assertIn("private repository", build_info["artifact_status"])
+
+    def test_internal_repository_does_not_count_as_private_owner_test_delivery(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            bundle = make_bundle(root)
+            stage = root / "internal-stage"
+            result = stage_package(bundle, stage, "source", "tested", "123", "1.13.0",
+                                   repository_visibility="internal")
+            self.assertEqual(result["artifact_access"], "organization-internal")
+            self.assertFalse(result["artifact_upload_allowed"])
+
+    def test_unsupported_repository_visibility_fails_closed(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            bundle = make_bundle(root)
+            with self.assertRaisesRegex(PackageError, "Unsupported repository visibility"):
+                stage_package(bundle, root / "bad-stage", "source", "tested", "123",
+                              "1.13.0", repository_visibility="shared")
 
 
 if __name__ == "__main__":
