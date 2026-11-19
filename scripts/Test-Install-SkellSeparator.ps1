@@ -52,6 +52,34 @@ function Copy-Package([string]$Source, [string]$Destination) {
     Copy-Item -LiteralPath $Source -Destination $Destination -Recurse -ErrorAction Stop
 }
 
+function New-TestJunction([string]$Path, [string]$Target) {
+    if (Test-Path -LiteralPath $Path) { throw "Test junction path already exists: $Path" }
+    if (-not (Test-Path -LiteralPath $Target -PathType Container)) { throw "Test junction target is missing: $Target" }
+    New-Item -ItemType Junction -Path $Path -Target $Target -ErrorAction Stop | Out-Null
+    $item = Get-Item -LiteralPath $Path -Force -ErrorAction Stop
+    if (($item.Attributes -band [System.IO.FileAttributes]::ReparsePoint) -eq 0) {
+        Remove-Item -LiteralPath $Path -Force -ErrorAction SilentlyContinue
+        throw "Test path was not created as a reparse point: $Path"
+    }
+}
+
+function Remove-TestJunction([string]$Path) {
+    $item = Get-Item -LiteralPath $Path -Force -ErrorAction SilentlyContinue
+    if ($null -eq $item) { return }
+    if (($item.Attributes -band [System.IO.FileAttributes]::ReparsePoint) -eq 0) {
+        throw "Refusing to remove a non-junction test path: $Path"
+    }
+    Remove-Item -LiteralPath $Path -Force -ErrorAction Stop
+}
+
+function Invoke-ExpectedReparseFailure([scriptblock]$Action, [string]$Message) {
+    $failure = $null
+    try { & $Action | Out-Null }
+    catch { $failure = $_.Exception.Message }
+    Assert (-not [string]::IsNullOrWhiteSpace($failure)) $Message
+    Assert ($failure -match '(?i)reparse point') "Failure did not identify the reparse-point guard: $failure"
+}
+
 $package = [System.IO.Path]::GetFullPath($PackageRoot)
 $installer = [System.IO.Path]::GetFullPath($InstallerPath)
 $testRoot = [System.IO.Path]::GetFullPath($TestRoot)
@@ -172,6 +200,97 @@ try {
         & $installer -PackageRoot $packageV1 -Vst3Directory $invalidTargetRoot -BackupRoot (Join-Path $testRoot 'InvalidTargetBackups') -Confirm:$false
     } 'Installer overwrote an invalid pre-existing target.'
     Assert ((Get-Content -LiteralPath $invalidTarget -Raw) -eq 'preserve existing data') 'Installer modified an invalid pre-existing target.'
+
+
+    # Reparse-point regression coverage. All links and targets stay inside this
+    # disposable test root; each expected rejection must name the guard itself.
+    $junctionPackageTarget = Join-Path $testRoot 'junction-package-target'
+    Copy-Package $packageV1 $junctionPackageTarget
+    $junctionPackage = Join-Path $testRoot 'junction-package-root'
+    New-TestJunction $junctionPackage $junctionPackageTarget
+    $junctionPackageInstall = Join-Path $testRoot 'junction-package-install'
+    Invoke-ExpectedReparseFailure {
+        & $installer -PackageRoot $junctionPackage -Vst3Directory $junctionPackageInstall -BackupRoot (Join-Path $testRoot 'junction-package-backups') -Confirm:$false
+    } 'Installer accepted a package-root junction.'
+    Assert (-not (Test-Path -LiteralPath $junctionPackageInstall)) 'Package-root junction created an installation target.'
+    Remove-TestJunction $junctionPackage
+
+    $nestedPackage = Join-Path $testRoot 'nested-junction-package'
+    Copy-Package $packageV1 $nestedPackage
+    $nestedLinkTarget = Join-Path $testRoot 'nested-junction-target'
+    New-Item -ItemType Directory -Path $nestedLinkTarget -ErrorAction Stop | Out-Null
+    $nestedLink = Join-Path $nestedPackage 'unexpected-directory-link'
+    New-TestJunction $nestedLink $nestedLinkTarget
+    $nestedInstall = Join-Path $testRoot 'nested-junction-install'
+    Invoke-ExpectedReparseFailure {
+        & $installer -PackageRoot $nestedPackage -Vst3Directory $nestedInstall -BackupRoot (Join-Path $testRoot 'nested-junction-backups') -Confirm:$false
+    } 'Installer accepted a nested package junction.'
+    Assert (-not (Test-Path -LiteralPath $nestedInstall)) 'Nested package junction created an installation target.'
+    Remove-TestJunction $nestedLink
+
+    $destinationTarget = Join-Path $testRoot 'destination-junction-target'
+    New-Item -ItemType Directory -Path $destinationTarget -ErrorAction Stop | Out-Null
+    $destinationLink = Join-Path $testRoot 'destination-junction-root'
+    New-TestJunction $destinationLink $destinationTarget
+    Invoke-ExpectedReparseFailure {
+        & $installer -PackageRoot $packageV1 -Vst3Directory $destinationLink -BackupRoot (Join-Path $testRoot 'destination-junction-backups') -Confirm:$false
+    } 'Installer accepted a VST3 destination-root junction.'
+    Assert (-not (Test-Path -LiteralPath (Join-Path $destinationTarget 'Skell Separator.vst3'))) 'Destination-root junction wrote through to its target.'
+    Remove-TestJunction $destinationLink
+
+    $destinationParentTarget = Join-Path $testRoot 'destination-parent-target'
+    New-Item -ItemType Directory -Path $destinationParentTarget -ErrorAction Stop | Out-Null
+    $destinationParentLink = Join-Path $testRoot 'destination-parent-junction'
+    New-TestJunction $destinationParentLink $destinationParentTarget
+    $destinationChild = Join-Path $destinationParentLink 'VST3'
+    Invoke-ExpectedReparseFailure {
+        & $installer -PackageRoot $packageV1 -Vst3Directory $destinationChild -BackupRoot (Join-Path $testRoot 'destination-parent-backups') -Confirm:$false
+    } 'Installer accepted a VST3 destination below a junction parent.'
+    Assert (-not (Test-Path -LiteralPath (Join-Path $destinationParentTarget 'VST3'))) 'Destination-parent junction created a child directory.'
+    Remove-TestJunction $destinationParentLink
+
+    $backupGuardTarget = Join-Path $testRoot 'backup-junction-install'
+    $backupGuardNormalRoot = Join-Path $testRoot 'backup-junction-normal-backups'
+    $backupGuardInstall = & $installer -PackageRoot $packageV1 -Vst3Directory $backupGuardTarget -BackupRoot $backupGuardNormalRoot -Confirm:$false
+    Assert ($backupGuardInstall.status -eq 'installed') 'Could not prepare the backup-junction test installation.'
+    $backupJunctionTarget = Join-Path $testRoot 'backup-junction-target'
+    New-Item -ItemType Directory -Path $backupJunctionTarget -ErrorAction Stop | Out-Null
+    $backupJunction = Join-Path $testRoot 'backup-junction-root'
+    New-TestJunction $backupJunction $backupJunctionTarget
+    Invoke-ExpectedReparseFailure {
+        & $installer -PackageRoot $packageV2 -Vst3Directory $backupGuardTarget -BackupRoot $backupJunction -Confirm:$false
+    } 'Installer accepted a backup-root junction during update.'
+    $backupGuardInfo = Get-Content -LiteralPath (Join-Path $backupGuardTarget 'Skell Separator.vst3\Contents\Resources\moduleinfo.json') -Raw | ConvertFrom-Json
+    Assert ([string]$backupGuardInfo.Version -eq '1.13.0') 'Backup-root junction rejection changed the installed version.'
+    Assert (@(Get-ChildItem -LiteralPath $backupJunctionTarget -Force).Count -eq 0) 'Backup-root junction wrote through to its target.'
+    Remove-TestJunction $backupJunction
+
+    $backupParentTarget = Join-Path $testRoot 'backup-parent-target'
+    New-Item -ItemType Directory -Path $backupParentTarget -ErrorAction Stop | Out-Null
+    $backupParentLink = Join-Path $testRoot 'backup-parent-junction'
+    New-TestJunction $backupParentLink $backupParentTarget
+    $backupChild = Join-Path $backupParentLink 'Backups'
+    Invoke-ExpectedReparseFailure {
+        & $installer -PackageRoot $packageV2 -Vst3Directory $backupGuardTarget -BackupRoot $backupChild -Confirm:$false
+    } 'Installer accepted a backup directory below a junction parent.'
+    $backupGuardInfoAfterParent = Get-Content -LiteralPath (Join-Path $backupGuardTarget 'Skell Separator.vst3\Contents\Resources\moduleinfo.json') -Raw | ConvertFrom-Json
+    Assert ([string]$backupGuardInfoAfterParent.Version -eq '1.13.0') 'Backup-parent junction rejection changed the installed version.'
+    Assert (-not (Test-Path -LiteralPath $backupChild)) 'Backup-parent junction created a child directory.'
+    Remove-TestJunction $backupParentLink
+
+    $bundleJunctionTarget = Join-Path $testRoot 'existing-bundle-junction-target'
+    Copy-Item -LiteralPath (Join-Path $packageV1 'Skell Separator.vst3') -Destination $bundleJunctionTarget -Recurse -ErrorAction Stop
+    $bundleModule = Join-Path $bundleJunctionTarget 'Contents\x86_64-win\Skell Separator.vst3'
+    $bundleHashBefore = Get-Hash $bundleModule
+    $bundleDestination = Join-Path $testRoot 'existing-bundle-junction-destination'
+    New-Item -ItemType Directory -Path $bundleDestination -ErrorAction Stop | Out-Null
+    $bundleJunction = Join-Path $bundleDestination 'Skell Separator.vst3'
+    New-TestJunction $bundleJunction $bundleJunctionTarget
+    Invoke-ExpectedReparseFailure {
+        & $installer -PackageRoot $packageV1 -Vst3Directory $bundleDestination -BackupRoot (Join-Path $testRoot 'existing-bundle-junction-backups') -Confirm:$false
+    } 'Installer accepted an existing VST3 bundle-root junction.'
+    Assert ((Get-Hash $bundleModule) -eq $bundleHashBefore) 'Existing bundle-root junction target was modified.'
+    Remove-TestJunction $bundleJunction
 
     $script:passed = $true
     Write-Host "Skell Separator install/update/rollback tests: $script:assertions assertions passed."
