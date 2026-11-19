@@ -143,7 +143,26 @@ def validate_bundle(bundle: Path, expected_version: str) -> tuple[dict[str, Any]
 
 
 def stage_package(bundle: Path, output: Path, source_head: str, tested_commit: str,
-                  run_id: str, expected_version: str) -> dict[str, Any]:
+                  run_id: str, expected_version: str,
+                  repository_visibility: str = "unknown") -> dict[str, Any]:
+    visibility = str(repository_visibility).strip().lower() or "unknown"
+    if visibility not in {"public", "private", "internal", "unknown"}:
+        raise PackageError(f"Unsupported repository visibility: {visibility}")
+    upload_allowed = visibility == "private"
+    artifact_access = {
+        "private": "repository-restricted",
+        "public": "public",
+        "internal": "organization-internal",
+        "unknown": "unknown",
+    }[visibility]
+    if upload_allowed:
+        artifact_status = "owner-test preview; private repository; upload permitted"
+    elif visibility == "public":
+        artifact_status = "owner-test preview; public repository; upload withheld"
+    elif visibility == "internal":
+        artifact_status = "owner-test preview; internal repository; upload withheld"
+    else:
+        artifact_status = "owner-test preview; repository visibility unknown; upload withheld"
     _, source_module, normalized = validate_bundle(bundle, expected_version)
     source_info = bundle / MODULEINFO
     original_info = source_info.read_text(encoding="utf-8-sig")
@@ -168,20 +187,31 @@ def stage_package(bundle: Path, output: Path, source_head: str, tested_commit: s
         "class_categories": sorted(x["Category"] for x in info["Classes"]),
         "source_head_sha": source_head, "tested_commit": tested_commit,
         "workflow_run_id": str(run_id),
-        "release_status": "private preview only; host acceptance not implied",
+        "repository_visibility": visibility,
+        "artifact_access": artifact_access,
+        "artifact_upload_allowed": upload_allowed,
+        "release_status": "owner-test preview only; host acceptance not implied",
     }
     build_info = {
         "product": PRODUCT, "vendor": VENDOR, "version": expected_version,
         "format": "VST3", "platform": "Windows x86_64",
         "source_head_sha": source_head, "tested_commit": tested_commit,
-        "workflow_run_id": str(run_id), "artifact_status": "private CI preview",
+        "workflow_run_id": str(run_id),
+        "repository_visibility": visibility,
+        "artifact_access": artifact_access,
+        "artifact_upload_allowed": upload_allowed,
+        "artifact_status": artifact_status,
     }
     nl = chr(10)
     (output / "vst3-verification.json").write_text(json.dumps(result, indent=2) + nl, encoding="utf-8")
     (output / "build-info.json").write_text(json.dumps(build_info, indent=2) + nl, encoding="utf-8")
     (output / "PREVIEW-ONLY.txt").write_text(nl.join([
-        "SKELL SEPARATOR — PRIVATE WINDOWS VST3 PREVIEW",
+        "SKELL SEPARATOR — OWNER-TEST WINDOWS VST3 PREVIEW",
         "Not an approved public or commercial release.",
+        f"Repository visibility: {visibility}.",
+        f"Product artifact upload permitted: {'yes' if upload_allowed else 'no'}.",
+        "Product ZIP uploads are withheld unless repository visibility is private.",
+        "Existing artifacts from public-repository runs remain publicly accessible; do not treat them as private.",
         "FL Studio acceptance, musical A/B, target-hardware CPU/latency, licensing and updater/rollback remain separate gates.",
         "",
     ]), encoding="utf-8")
@@ -199,10 +229,14 @@ def main() -> int:
     parser.add_argument("--tested-commit", default="")
     parser.add_argument("--run-id", default="")
     parser.add_argument("--expected-version", default=VERSION)
+    parser.add_argument("--repository-visibility",
+                        choices=("public", "private", "internal", "unknown"),
+                        default="unknown")
     args = parser.parse_args()
     try:
         result = stage_package(args.bundle, args.output_dir, args.source_head,
-                               args.tested_commit, args.run_id, args.expected_version)
+                               args.tested_commit, args.run_id, args.expected_version,
+                               args.repository_visibility)
     except PackageError as exc:
         print(f"PACKAGE VERIFICATION FAILED: {exc}", file=sys.stderr)
         return 1
