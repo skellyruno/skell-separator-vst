@@ -165,6 +165,10 @@ public:
             wetRaw[i] = std::min(0.32f, wetEvidence) *
                          std::clamp(magnitude / (noise * 1.5f + 1.0e-5f), 0.0f, 1.0f);
             dryRaw[i] = fraction * (1.0f - 0.40f * decaying);
+            // Direct-vocal evidence competes with late-reverb assignment.
+            // Measured dry-vocal prints exposed false reverb leakage; retain
+            // a small overlap allowance for genuine late reflections.
+            wetRaw[i] *= (1.0f - 0.85f * dryRaw[i]);
         }
 
         // Energy-aware three-bin smoothing: avoid spreading a harmonic mask
