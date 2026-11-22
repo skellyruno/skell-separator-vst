@@ -30,6 +30,7 @@ jobs:
         env:
           SOURCE_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
           TESTED_COMMIT: ${{ github.sha }}
+          REPOSITORY_VISIBILITY: ${{ github.event.repository.visibility }}
         run: |
           $ErrorActionPreference = 'Stop'
           $bundles = @(Get-ChildItem -LiteralPath build -Directory -Recurse -Filter 'Skell Separator.vst3' | Where-Object { $_.FullName -match '[\\/]Release[\\/]' })
@@ -38,7 +39,9 @@ jobs:
           $versionMatch = [regex]::Match($project, 'project\s*\(\s*SkellSeparator\s+VERSION\s+([0-9]+\.[0-9]+\.[0-9]+)')
           if (-not $versionMatch.Success) { throw 'Could not read SkellSeparator VERSION from CMakeLists.txt' }
           $version = $versionMatch.Groups[1].Value
-          python tools/verify_vst3_package.py --bundle $bundles[0].FullName --output-dir release-stage --source-head $env:SOURCE_HEAD_SHA --tested-commit $env:TESTED_COMMIT --run-id $env:GITHUB_RUN_ID --expected-version $version
+          $visibility = $env:REPOSITORY_VISIBILITY
+          if ([string]::IsNullOrWhiteSpace($visibility)) { $visibility = 'unknown' }
+          python tools/verify_vst3_package.py --bundle $bundles[0].FullName --output-dir release-stage --source-head $env:SOURCE_HEAD_SHA --tested-commit $env:TESTED_COMMIT --run-id $env:GITHUB_RUN_ID --expected-version $version --repository-visibility $visibility
           if ($LASTEXITCODE -ne 0) { throw "VST3 package verifier failed with exit code $LASTEXITCODE" }
       - name: Test private install, update and rollback helper
         shell: pwsh
@@ -84,7 +87,19 @@ jobs:
           path: pluginval-reports/
           if-no-files-found: ignore
           retention-days: 14
+      - name: Report product artifact visibility gate
+        shell: pwsh
+        env:
+          REPOSITORY_VISIBILITY: ${{ github.event.repository.visibility }}
+        run: |
+          if ($env:REPOSITORY_VISIBILITY -eq 'private') {
+            Write-Host 'Repository is private; owner-test product artifact upload is permitted.'
+          }
+          else {
+            Write-Warning ("Repository visibility is '{0}'; product artifact upload is withheld." -f $env:REPOSITORY_VISIBILITY)
+          }
       - name: Upload one-extraction VST3 preview and provenance
+        if: github.event.repository.visibility == 'private'
         uses: actions/upload-artifact@v4
         with:
           name: SkellSeparator-Windows-VST3

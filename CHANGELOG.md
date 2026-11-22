@@ -1,9 +1,11 @@
-## Private preview distribution tooling (November 18, 2026)
+## Owner-test preview distribution tooling (November 19, 2026)
 
 - Add a Windows PowerShell VST3 installer/update/rollback helper for the checksum-verified one-extraction preview package.
 - Fix strict-mode handling for empty class-identity comparisons in the installer preflight.
 - Validate provenance, strict JSON metadata, AMD64 PE32+ module structure, full package checksums and backup tree hashes before replacing an existing bundle.
-- Add WhatIf, idempotent install, verified pre-update backup, rollback and non-destructive failure handling tests. This is unsigned private-preview tooling, not a commercial installer.
+- Add WhatIf, idempotent install, verified pre-update backup, rollback and non-destructive failure handling tests. This is unsigned owner-test preview tooling, not a commercial installer.
+- Record repository visibility and artifact-access status in both package manifests; product ZIP upload is withheld unless the repository is private, while non-product diagnostics remain available.
+- Add package-verifier tests for public, private, internal, unknown and unsupported repository-visibility states.
 
 ## 1.13.0 — Deterministic offline neural bounce and DSP/UX accuracy
 

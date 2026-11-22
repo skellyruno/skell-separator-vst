@@ -338,7 +338,7 @@ function Get-ValidatedPackage([string]$Root) {
         $verification.module_sha256 -ne $evidence.binary_sha256 -or
         [int64]$verification.module_bytes -ne $evidence.binary_size -or
         $verification.moduleinfo_normalized -ne $true -or
-        $verification.release_status -ne 'private preview only; host acceptance not implied') {
+        $verification.release_status -ne 'owner-test preview only; host acceptance not implied') {
         throw 'VST3 verification sidecar does not match the package contents.'
     }
     $manifestIds = @($verification.class_ids | ForEach-Object { ([string]$_).ToUpperInvariant() } | Sort-Object)

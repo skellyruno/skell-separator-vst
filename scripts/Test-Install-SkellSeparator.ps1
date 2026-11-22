@@ -154,6 +154,19 @@ try {
     } 'Installer accepted duplicate JSON properties.'
     Assert (-not (Test-Path -LiteralPath $duplicateJsonTarget)) 'Duplicate JSON package created an installation target.'
 
+    $staleReleaseStatusPackage = Join-Path $testRoot 'stale-release-status-package'
+    Copy-Package $packageV1 $staleReleaseStatusPackage
+    $staleStatusPath = Join-Path $staleReleaseStatusPackage 'vst3-verification.json'
+    $staleStatus = Get-Content -LiteralPath $staleStatusPath -Raw | ConvertFrom-Json
+    $staleStatus.release_status = 'private preview only; host acceptance not implied'
+    [System.IO.File]::WriteAllText($staleStatusPath, (($staleStatus | ConvertTo-Json -Depth 20) + [Environment]::NewLine), [System.Text.UTF8Encoding]::new($false))
+    Write-PackageChecksums $staleReleaseStatusPackage
+    $staleStatusTarget = Join-Path $testRoot 'StaleReleaseStatusTarget'
+    Invoke-ExpectedFailure {
+        & $installer -PackageRoot $staleReleaseStatusPackage -Vst3Directory $staleStatusTarget -BackupRoot (Join-Path $testRoot 'StaleReleaseStatusBackups') -Confirm:$false
+    } 'Installer accepted an outdated release_status value.'
+    Assert (-not (Test-Path -LiteralPath $staleStatusTarget)) 'Outdated release_status created an installation target.'
+
     $badBackup = Join-Path $testRoot 'bad-backup'
     Copy-Package $originalBackup $badBackup
     $badBackupModule = Join-Path $badBackup 'Skell Separator.vst3\Contents\x86_64-win\Skell Separator.vst3'
