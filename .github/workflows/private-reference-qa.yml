@@ -1,0 +1,39 @@
+name: Source-only private-reference QA toolkit
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/private-reference-qa.yml'
+      - 'Source/**'
+      - 'tests/**'
+      - 'models/**'
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  source-only-toolkit:
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - name: Stage public source and cryptographic manifest
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p toolkit
+          cp -a Source tests models toolkit/
+          cp -a CMakeLists.txt AGENTS.md toolkit/
+          printf '%s\n' "${{ github.event.pull_request.head.sha || github.sha }}" > toolkit/SOURCE_HEAD_SHA.txt
+          printf '%s\n' 'Public source and regression fixtures ONLY. No VST3 binaries, copyrighted stems, private recordings or production builds.' > toolkit/README-ARTIFACT.txt
+          (cd toolkit && find Source tests models -type f -print0 | sort -z | xargs -0 sha256sum) > toolkit/SHA256SUMS
+          test -s toolkit/SHA256SUMS
+      - name: Upload public source-only QA toolkit
+        uses: actions/upload-artifact@v4
+        with:
+          name: SkellSeparator-SourceOnly-QA
+          path: toolkit/
+          retention-days: 3
+          if-no-files-found: error
