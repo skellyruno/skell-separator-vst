@@ -144,16 +144,18 @@ def render(exe, mixture, out, strength=None):
     return {s:np.fromfile(p,dtype='<f4').reshape(-1,2) for s,p in zip(STEMS,paths)}
 
 
-def run_benchmark(dry,inst,wet,root,cxx):
+def run_benchmark(dry,inst,wet,root,cxx,has_instrument=True):
     # Shared attenuation prevents a clipped mixture without changing ratios.
     peak=float(np.max(np.abs(dry+inst+wet)))
     scale=min(1.0, .95/max(peak,1e-9))
     dry, inst, wet = [x*scale for x in (dry,inst,wet)]
-    conditions={
-        'instrument_only':(np.zeros_like(dry),inst,np.zeros_like(wet)),
-        'vocal_only':(dry,np.zeros_like(inst),np.zeros_like(wet)),
-        'mixed':(dry,inst,wet),
-    }
+    # Do not fabricate a zero-valued "reference instrumental" from a
+    # vocal/effect-only archive. No instrumental reference means no instrument
+    # leakage test and no instrument-only condition in the output.
+    conditions={'vocal_only':(dry,np.zeros_like(inst),np.zeros_like(wet))}
+    if has_instrument:
+        conditions['instrument_only']=(np.zeros_like(dry),inst,np.zeros_like(wet))
+        conditions['mixed']=(dry,inst,wet)
     if np.any(wet): conditions['dry_plus_wet']=(dry,np.zeros_like(inst),wet)
     results=[]
     with tempfile.TemporaryDirectory(prefix='skell-real-quality-') as folder:
@@ -173,12 +175,16 @@ def run_benchmark(dry,inst,wet,root,cxx):
 def main():
     p=argparse.ArgumentParser(description=__doc__)
     p.add_argument('--voice',type=Path, help='Isolated *dry* vocal WAV recorded by a singer')
-    p.add_argument('--instrumental',type=Path,help='Isolated instrumental WAV with NO vocals')
+    p.add_argument('--instrumental',type=Path,help='Genuine isolated instrumental WAV with NO vocals (omit if unavailable)')
     p.add_argument('--reverb',type=Path,help='Separate wet-only vocal-reverb WAV (not full wet vocals)')
+    p.add_argument('--printed-reverb',type=Path,
+                   help='Same-take dry+reverb print; subtract voice to get a DIFFERENTIAL effect return, not an independent wet-only stem')
     p.add_argument('--simulated-reverb',action='store_true',help='Add controlled reverb to real vocal for testing')
     p.add_argument('--license', help='License/SPDX identifier for both sources, with rights verified')
     p.add_argument('--attribution',help='Artist and source URL required for attribution datasets')
     p.add_argument('--max-seconds',type=float,default=12.0)
+    p.add_argument('--offset-seconds',type=float,default=0.0,
+                   help='Start all references at the same fixed timeline offset; never auto-align estimated outputs')
     p.add_argument('--output',type=Path)
     p.add_argument('--compiler',default='c++')
     p.add_argument('--self-test',action='store_true')
@@ -195,23 +201,46 @@ def main():
             assert len(result)==12
             assert all(r['reconstruction_max_error']<2e-5 for r in result)
             assert any(r['wet_only_reverb_sdr_db'] is not None for r in result)
+            partial=run_benchmark(v,np.zeros_like(v),simulated_wet_only(v),
+                                  Path(__file__).resolve().parent.parent,args.compiler,
+                                  has_instrument=False)
+            assert len(partial)==6
+            assert all(r['condition']!='instrument_only' and r['instrumental_residual_sdr_db'] is None
+                       for r in partial)
         print('Real-stem benchmark self-test passed (procedural fixture only; NOT real singing)')
         return
-    if args.voice is None or args.instrumental is None or args.license is None or args.attribution is None:
-        p.error('--voice --instrumental --license --attribution are required for a real-stem benchmark')
-    if args.reverb and args.simulated_reverb:p.error('Specify --reverb OR --simulated-reverb, not both')
-    voice=audio(args.voice);inst=audio(args.instrumental)
-    wet=audio(args.reverb) if args.reverb else np.zeros_like(voice)
-    length=min(map(len,(voice,inst,wet))) if args.reverb else min(len(voice),len(inst))
+    if args.voice is None or args.license is None or args.attribution is None:
+        p.error('--voice --license --attribution are required for a real-recording benchmark')
+    if sum(bool(v) for v in (args.reverb,args.printed_reverb,args.simulated_reverb))>1:
+        p.error('Choose just one of --reverb, --printed-reverb, or --simulated-reverb')
+    if not np.isfinite(args.offset_seconds) or args.offset_seconds<0 or not np.isfinite(args.max_seconds) or args.max_seconds<=0:
+        p.error('Offset must be finite and non-negative; duration must be finite and positive')
+    if args.printed_reverb:
+        # A simple difference is a valid effect reference only if both prints
+        # have identical sample grids. It may still include other processing
+        # differences, so never advertise it as independent natural reverb.
+        dry_info=sf.info(str(args.voice)); wet_info=sf.info(str(args.printed_reverb))
+        if (dry_info.samplerate,dry_info.frames,dry_info.channels)!=(wet_info.samplerate,wet_info.frames,wet_info.channels):
+            p.error('--printed-reverb requires identical original rate, frame count and channel count')
+    voice=audio(args.voice)
+    inst=audio(args.instrumental) if args.instrumental else np.zeros_like(voice)
+    wet=audio(args.reverb) if args.reverb else (audio(args.printed_reverb)-voice if args.printed_reverb else np.zeros_like(voice))
+    first=int(round(args.offset_seconds*SR))
+    length=min(map(len,(voice,inst,wet)))-first
     length=min(length,int(args.max_seconds*SR))
-    if length<SR: p.error('Need at least one second of overlapping aligned recordings')
-    voice,inst,wet = voice[:length],inst[:length],wet[:length]
+    if length<SR: p.error('Need at least one second of overlapping aligned recordings at this offset')
+    voice,inst,wet = (x[first:first+length] for x in (voice,inst,wet))
     if args.simulated_reverb: wet=simulated_wet_only(voice)
-    result={'dataset_license':args.license,'attribution':args.attribution,'source':'real isolated stems',
-            'reverb_reference':'real wet-only stem' if args.reverb else ('algorithmic send on real singing' if args.simulated_reverb else 'unavailable'),
+    has_instrument=args.instrumental is not None
+    result={'dataset_license':args.license,'attribution':args.attribution,'source':'real isolated stems' if has_instrument else 'real isolated vocal with controlled effects',
+            'instrumental_reference':'real isolated instrumental' if has_instrument else 'unavailable; NOT measured',
+            'reverb_reference':('real independently supplied wet-only stem' if args.reverb else
+                                'same-take print differential; effects may include more than reverb' if args.printed_reverb else
+                                'algorithmic send on real recording' if args.simulated_reverb else 'unavailable'),
             'sample_rate':SR,'seconds':round(length/SR,3),
+            'offset_seconds':args.offset_seconds,
             'important_limit':'2/3-stem objective check, not training-set-independent song-level benchmark',
-            'metrics':run_benchmark(voice,inst,wet,Path(__file__).resolve().parent.parent,args.compiler)}
+            'metrics':run_benchmark(voice,inst,wet,Path(__file__).resolve().parent.parent,args.compiler,has_instrument)}
     output=json.dumps(result,indent=2,allow_nan=False)
     if args.output:args.output.write_text(output+'\n',encoding='utf-8')
     print(output)

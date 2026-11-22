@@ -127,6 +127,11 @@ void voiceTailAndSilenceTests(int sampleRate)
     }
     assert(maxDry > 0.15f);
     assert(maxWet > 0.01f);
+    // Direct-vocal energy must not also populate the reverb bus excessively.
+    // The real-recording QA showed this false-reverb leakage on dry vocals;
+    // competitive mask suppression must leave a real decaying tail but keep
+    // the 48 kHz synthetic diagnostic below the older 0.086 baseline.
+    if (sampleRate == 48000) assert(maxWet < 0.070f);
     // A long exact silence should reset stale masks and restart cleanly.
     mid.fill(0.0f); side.fill(0.0f);
     for (int frame = 0; frame < static_cast<int>(0.55 * sampleRate / 256.0); ++frame)
