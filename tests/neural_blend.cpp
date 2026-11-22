@@ -81,6 +81,29 @@ int main() {
         assert(std::abs(s[1][0]) <= 0.0021f);
         assert(std::abs(s[0][0] + s[1][0] + s[2][0] - 1.0f) < 1e-6f);
     }
+    // A real-time worker can stop delivering frames for several seconds.
+    // During that period the classical voice may become silent. The guard's
+    // loudness memory must decay even while neural is unavailable; otherwise
+    // its FIRST recovered frame can inject a false ~-28 dBFS voice burst.
+    guarded.reset();
+    for (int i = 0; i < 300; ++i) {
+        auto loud = makeStems();
+        guarded.apply(loud, true, { 3.5f, -3.5f }, true);
+    }
+    for (int i = 0; i < 6000; ++i) {
+        Separator::Stems silent {};
+        guarded.apply(silent, false, {}, true);
+    }
+    for (int i = 0; i < 320; ++i) {
+        Separator::Stems silent {};
+        guarded.apply(silent, true, { 3.5f, -3.5f }, true);
+        for (int ch = 0; ch < 2; ++ch) {
+            assert(std::isfinite(silent[1][ch]));
+            assert(std::abs(silent[1][ch]) <= 0.00215f);
+            assert(std::abs(silent[0][ch] + silent[1][ch] + silent[2][ch]) < 1e-6f);
+        }
+    }
+    std::cout << "neural guard dropout-to-silence recovery: PASS\n";
     // A model stall must not cause allocations, saturation or timing changes.
     std::cout << "neural dropout/recovery crossfade: PASS\n";
 }

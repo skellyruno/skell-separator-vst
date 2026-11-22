@@ -42,6 +42,11 @@ public:
             const auto c = static_cast<std::size_t>(ch);
             const float original = stems[0][c] + stems[1][c] + stems[2][c];
             const float dry = stems[1][c];
+            // Follow the classical stem even while the model is unavailable.
+            // Otherwise a long dropout can freeze a previously loud envelope,
+            // allowing a stale neural correction to burst into later silence.
+            if (protectiveGuard)
+                classicalEnvelope[c] = std::max(std::abs(dry), classicalEnvelope[c] * 0.9985f);
             float neuralCorrection = available ? candidate[c] - dry : 0.0f;
             if (protectiveGuard && available) {
                 // Original experimental synthetic model is not validated on
@@ -49,7 +54,6 @@ public:
                 // and vocal/transient removal against the established DSP.
                 // Smooth limiting instead of a hard sample clip avoids new
                 // high-frequency edges. Fixed state, zero allocations.
-                classicalEnvelope[c] = std::max(std::abs(dry), classicalEnvelope[c] * 0.9985f);
                 const float bound = .08f * classicalEnvelope[c] + .002f;
                 neuralCorrection *= bound / std::sqrt(bound * bound + neuralCorrection * neuralCorrection);
             }
