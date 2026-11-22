@@ -22,7 +22,7 @@ Lower dry-only false-Reverb RMS (relative to input dry Voice) is better; higher 
 | Recording A effects-print reference SDR | -1.73 dB | -0.97 dB | +0.76 dB |
 | Recording B effects-print reference SDR | -0.34 dB | -0.09 dB | +0.25 dB |
 
-Held-out sections not used for candidate choice showed A false Reverb -30.88→-34.53 dB and effects SDR -1.53→-0.76 dB; B false Reverb -29.09→-31.82 dB and effects SDR -0.29→-0.08 dB. These are only **two** recordings and SDR remains poor, especially for distinguishing actual reverberation from other effect differences.
+**Strictly nonoverlapping** holdouts (A tuned on 3–11 s and held out 13–21 s; B tuned on 5–13 s and held out 0–5 s) showed: A dry-only false Reverb -30.88→-34.53 dB and effects SDR -1.53→-0.76 dB; B false Reverb -28.89→-33.41 dB and effects SDR -0.33→-0.04 dB. The B holdout is five seconds, not eight. These are only **two** recordings and SDR remains poor, especially for distinguishing actual reverberation from other effect differences.
 
 Direct Voice SI-SDR moved by less than 0.01 dB in these mixed effect-print comparisons. Complementary reconstruction remained within approximately `6e-8` sample max error after reported latency. These results do **not** show that genuine reverb is accurately separated.
 
